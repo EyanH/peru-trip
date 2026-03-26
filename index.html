@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Peru Trip 2026</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Peru 2026">
+<meta name="theme-color" content="#0d1117">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1F1F5;&#x1F1EA;</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body,#root{min-height:100vh;min-height:100dvh;background:#0d1117}
+body{font-family:'DM Sans',sans-serif;color:#e6edf3;overflow-x:hidden}
+input,textarea,button{font-family:inherit}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#21262d;border-radius:3px}
+@keyframes pulse-dot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+@keyframes overlay-in{from{opacity:0;transform:translateY(30px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes backdrop-in{from{opacity:0}to{opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.sync-spin{display:inline-block;animation:spin 1s linear infinite}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+"use strict";
+var h=React.createElement,us=React.useState,ue=React.useEffect,ur=React.useRef,uc=React.useCallback;
+
+var db=null;
+var DOC_ID="peru-trip-2026";
+var FIREBASE_CONFIG={apiKey:"AIzaSyDAcbCNhqY2TG2zqUpOWbaGBGq1o7hxet4",authDomain:"travel-app-277ca.firebaseapp.com",projectId:"travel-app-277ca",storageBucket:"travel-app-277ca.firebasestorage.app",messagingSenderId:"778858870676",appId:"1:778858870676:web:70aa64cd6171fbbff3c181"};
+try{firebase.initializeApp(FIREBASE_CONFIG);db=firebase.firestore();}catch(e){console.error("Firebase init error",e)}
+
+var localStore={get:function(k){try{var v=localStorage.getItem(k);return v?JSON.parse(v):null}catch(e){return null}},set:function(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+
+var FLAGS={"toronto":"🇨🇦","canada":"🇨🇦","yyz":"🇨🇦","lima":"🇵🇪","peru":"🇵🇪","cusco":"🇵🇪","cuz":"🇵🇪","salkantay":"🇵🇪","soraypampa":"🇵🇪","humantay":"🇵🇪","bogot\u00e1":"🇨🇴","bogota":"🇨🇴","bog":"🇨🇴","colombia":"🇨🇴"};
+function detectFlags(t){if(!t)return[];var l=t.toLowerCase(),f={};for(var k in FLAGS)if(l.indexOf(k)>=0)f[FLAGS[k]]=1;return Object.keys(f)}
+
+var TC={travel:{bg:"#0f1f2a",accent:"#4ecdc4",badge:"Transit"},explore:{bg:"#0f1f12",accent:"#a8e6a3",badge:"Explore"},trek:{bg:"#1f160a",accent:"#ffb347",badge:"Trek"},flex:{bg:"#14122a",accent:"#b8a9e8",badge:"Flex"}};
+
+var DEFAULT_META={tripName:"Peru",startDate:"2026-04-18",endDate:"2026-04-30",subtitle:"Toronto \u2192 Lima \u2192 Cusco \u2192 Salkantay \u2192 Home",stats:[{n:"13",l:"days"},{n:"5",l:"cities"},{n:"4,650m",l:"peak alt."},{n:"4",l:"flights"}]};
+
+var MONTH_LONG=["January","February","March","April","May","June","July","August","September","October","November","December"];
+function formatDateRange(start,end){
+  if(!start)return "";
+  var s=new Date(start+"T00:00:00"),e=end?new Date(end+"T00:00:00"):null;
+  var sm=MONTH_LONG[s.getMonth()],sd=s.getDate(),sy=s.getFullYear();
+  if(!e)return sm.toUpperCase()+" "+sd+", "+sy;
+  var em=MONTH_LONG[e.getMonth()],ed=e.getDate(),ey=e.getFullYear();
+  if(sy===ey&&sm===em)return sm.toUpperCase()+" "+sd+" \u2014 "+ed+", "+sy;
+  if(sy===ey)return sm.toUpperCase()+" "+sd+" \u2014 "+em.toUpperCase()+" "+ed+", "+sy;
+  return sm.toUpperCase()+" "+sd+", "+sy+" \u2014 "+em.toUpperCase()+" "+ed+", "+ey;
+}
+var WEEKDAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+var MONTH_SHORT=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function isoToDisplay(iso){var d=new Date(iso+"T00:00:00");return WEEKDAYS[d.getDay()]+", "+MONTH_SHORT[d.getMonth()]+" "+d.getDate();}
+function addDaysToISO(iso,n){var d=new Date(iso+"T00:00:00");d.setDate(d.getDate()+n);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+var MONTH_PARSER=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function parseTripDate(str){if(!str)return null;var clean=str.replace(/^[A-Za-z]+,\s*/,"").trim();var parts=clean.split(" ");if(parts.length<2)return null;var mo=MONTH_PARSER.indexOf(parts[0]);if(mo<0)return null;var yr=parts.length>=3?parseInt(parts[2]):2026;return{month:mo,day:parseInt(parts[1]),year:isNaN(yr)?2026:yr};}
+function daysInMonth(month,year){return new Date(year,month+1,0).getDate()}
+function firstDayOfMonth(month,year){return new Date(year,month,1).getDay()}
+var DEFAULT_DAYS=[
+{id:"d1",date:"Fri, Apr 18",day:"Day 1",title:"Toronto \u2192 Lima",location:"Travel Day",type:"travel",emoji:"\u2708\uFE0F",details:[{time:"8:55 AM",text:"Depart Toronto YYZ \u2192 Bogot\u00e1",sub:"AV255 \u00b7 6h10 \u00b7 Economy (X)"},{time:"2:05 PM",text:"Arrive Bogot\u00e1 (BOG)",sub:"3h40 layover"},{time:"5:45 PM",text:"Depart Bogot\u00e1 \u2192 Lima",sub:"AV051 \u00b7 3h05 \u00b7 Economy (X)"},{time:"8:50 PM",text:"Arrive Lima (LIM)",sub:"Jorge Ch\u00e1vez International"}],tips:"Same timezone as Toronto (EST = PET). No jet lag! Grab a taxi or Airport Express to Miraflores.",accommodation:null,suggestions:[]},
+{id:"d2",date:"Sat, Apr 19",day:"Day 2",title:"Lima \u2014 Explore Miraflores",location:"Lima, Peru",type:"explore",emoji:"\uD83C\uDF0A",details:[{time:"AM",text:"Sleep in & recover"},{time:"Midday",text:"Walk the Malec\u00f3n boardwalk",sub:"Ocean views, Parque del Amor, paragliders"},{time:"PM",text:"Kennedy Park & Miraflores",sub:"Famous cat park, shops, caf\u00e9s"},{time:"Evening",text:"Sunset at Larcomar",sub:"Cliffside mall, Pacific views"}],tips:"Miraflores is the safest, most walkable district.",accommodation:null,suggestions:["Ceviche at La Mar","Bike the coast","Huaca Pucllana at night"]},
+{id:"d3",date:"Sun, Apr 20",day:"Day 3",title:"Lima \u2014 Work Day + Evening",location:"Lima, Peru",type:"flex",emoji:"\uD83D\uDCBB",details:[{time:"8:00 AM",text:"Work begins \u2014 9-5 ET",sub:"8am-4pm Lima \u00b7 hotel desk or Miraflores cafe"},{time:"12:00 PM",text:"Lunch break",sub:"Quick ceviche nearby \u00b7 back in 30-45 min"},{time:"4:00 PM",text:"Work ends! Free evening"},{time:"4:30 PM",text:"Historic Center",sub:"Plaza Mayor, Cathedral, San Francisco Catacombs"},{time:"Evening",text:"Barranco district",sub:"Street art, Bridge of Sighs, Pisco Sour"}],tips:"Good WiFi in Miraflores: Starbucks on Av. Larco or hotel lobby. Grab a local SIM for backup.",accommodation:null,suggestions:["Larco Museum (free after 4pm)","Huaca Pucllana lit at night"]},
+{id:"d4",date:"Mon, Apr 21",day:"Day 4",title:"Lima \u2014 Work Day + Food Night",location:"Lima, Peru",type:"flex",emoji:"\uD83D\uDCBB",details:[{time:"8:00 AM",text:"Work begins \u2014 9-5 ET",sub:"8am-4pm Lima"},{time:"12:00 PM",text:"Lunch break",sub:"Mercado Central nearby \u00b7 authentic & affordable"},{time:"4:00 PM",text:"Work ends! Free evening"},{time:"4:30 PM",text:"San Isidro stroll",sub:"Huaca Huallamarca, upscale neighbourhood"},{time:"Evening",text:"Circuito Magico del Agua",sub:"Fountain park \u2014 spectacular after dark"}],tips:"Lima = food capital of South America. Reward yourself with a proper dinner after work!",accommodation:null,suggestions:["Chez Wong (book ahead)","Evening cooking class"]},
+{id:"d5",date:"Tue, Apr 22",day:"Day 5",title:"Lima \u2014 Work Day + Miraflores",location:"Lima, Peru",type:"flex",emoji:"\uD83D\uDCBB",details:[{time:"8:00 AM",text:"Work begins \u2014 9-5 ET",sub:"8am-4pm Lima"},{time:"12:00 PM",text:"Lunch on the Malecon",sub:"10 min walk, ocean views"},{time:"4:00 PM",text:"Work ends! Free evening"},{time:"4:30 PM",text:"Kennedy Park & Inka Market",sub:"Famous cat park, souvenirs, crafts"},{time:"Evening",text:"Larcomar at sunset",sub:"Cliffside mall \u2014 Pacific views, dinner & drinks"}],tips:"Paracas day trip needs a full day \u2014 best on Apr 19. Today keep it local after work.",accommodation:null,suggestions:["Bike the coast path","Barranco on foot"]},
+{id:"d6",date:"Wed, Apr 23",day:"Day 6",title:"Lima \u2014 Work Day + Pre-Cusco",location:"Lima, Peru",type:"flex",emoji:"\uD83D\uDCBB",details:[{time:"8:00 AM",text:"Work begins \u2014 9-5 ET",sub:"8am-4pm Lima \u00b7 last work day!"},{time:"12:00 PM",text:"Lunch break",sub:"Pack light, quick meal"},{time:"4:00 PM",text:"Work ends \u2014 Cusco prep mode"},{time:"4:15 PM",text:"Pharmacy run",sub:"Diamox, Advil, coca tea, electrolytes"},{time:"Evening",text:"Pack warm layers + early night",sub:"Flight to Cusco tomorrow 3:55pm \u00b7 hydrate!"}],tips:"Hydrate all day. No alcohol tonight. Cusco is 3,400m \u2014 you will feel it. Pack warmest layers on top.",accommodation:null,suggestions:["Quick Malecon sunset","Last Inka Market souvenir run"]},
+{id:"d7",date:"Thu, Apr 24",day:"Day 7",title:"Lima \u2192 Cusco",location:"Travel Day",type:"travel",emoji:"\uD83D\uDEEB",details:[{time:"3:55 PM",text:"Flight Lima \u2192 Cusco",sub:"~1h20"},{time:"~5:15 PM",text:"Arrive Cusco (CUZ)"},{time:"Evening",text:"Check in & rest",sub:"Coca tea, hydrate, easy night"}],tips:"\u26A0\uFE0F Cusco = 3,400m. You WILL feel it. No alcohol.",accommodation:null,suggestions:[]},
+{id:"d8",date:"Fri, Apr 25",day:"Day 8",title:"Cusco \u2014 Acclimatize",location:"Cusco, Peru",type:"explore",emoji:"\uD83C\uDFD4\uFE0F",details:[{time:"AM",text:"Plaza de Armas",sub:"Coffee, Cathedral"},{time:"Midday",text:"San Pedro Market",sub:"Juices, food, souvenirs"},{time:"PM",text:"Qorikancha",sub:"Inca sun temple"},{time:"5-7 PM",text:"\uD83C\uDF92 Trek briefing",sub:"MANDATORY \u2014 meet guide"}],tips:"Don't overdo it! Salkantay starts 4:30 AM tomorrow.",accommodation:null,suggestions:["ChocoMuseo","San Blas","Limbus Restobar"]},
+{id:"d9",date:"Sat, Apr 26",day:"Day 9",title:"Salkantay Trek \u2014 Day 1",location:"Cusco \u2192 Soraypampa",type:"trek",emoji:"\uD83E\uDD7E",details:[{time:"4:30 AM",text:"Hotel pickup"},{time:"~7:30 AM",text:"Mollepata \u2014 breakfast"},{time:"~8:30 AM",text:"Challacancha trailhead (3,800m)"},{time:"AM\u2013PM",text:"Hike to Soraypampa (3,900m)",sub:"~3hrs, gradual"},{time:"PM",text:"Humantay Lake hike",sub:"1.5hr steep \u2014 UNMISSABLE"},{time:"Evening",text:"Sky Camp dinner & sleep",sub:"Sky Dome under the stars"}],tips:"5-6hrs hiking. Humantay is steep but 100% worth it. COLD at night.",accommodation:"Sky Camp at Soraypampa",suggestions:[]},
+{id:"d10",date:"Sun, Apr 27",day:"Day 10",title:"Salkantay Trek \u2014 Day 2",location:"Salkantay Pass \u2192 Cusco",type:"trek",emoji:"\u26F0\uFE0F",details:[{time:"Early AM",text:"Breakfast at camp"},{time:"AM",text:"Salkantay Pass (4,650m)",sub:"~1hr to peak"},{time:"AM",text:"Panoramic views",sub:"Salkantay, Humantay, Huayanay"},{time:"Late AM",text:"Salkantay Lake detour",sub:"30 min \u2014 worth it"},{time:"PM",text:"Descend, lunch"},{time:"~6 PM",text:"Van to Cusco"}],tips:"4,650m peak. Go slow. Lake detour is worth 30 min.",accommodation:null,suggestions:[]},
+{id:"d11",date:"Mon, Apr 28",day:"Day 11",title:"Cusco \u2014 Recovery Day",location:"Cusco, Peru",type:"flex",emoji:"\uD83D\uDE34",details:[{time:"AM",text:"Sleep in"},{time:"Midday",text:"Sacsayhuam\u00e1n ruins",sub:"Inca fortress, 300-ton stones"},{time:"PM",text:"San Blas neighborhood",sub:"Artisan shops, cobblestone"},{time:"Evening",text:"Celebrate dinner",sub:"Cicciolina, Pachapapa, or Uchu"}],tips:"Tourist Ticket (~$50) = 16 sites.",accommodation:null,suggestions:["Cooking class","12-Angled Stone","San Crist\u00f3bal sunset"]},
+{id:"d12",date:"Tue, Apr 29",day:"Day 12",title:"Cusco \u2192 Lima",location:"Travel Day",type:"travel",emoji:"\u2708\uFE0F",details:[{time:"AM",text:"Last Cusco morning"},{time:"2:15 PM",text:"Flight Cusco \u2192 Lima",sub:"~1h20"},{time:"~3:35 PM",text:"Arrive Lima"},{time:"Evening",text:"Last night in Peru"}],tips:"Back at sea level \u2014 breathing feels amazing.",accommodation:null,suggestions:[]},
+{id:"d13",date:"Wed, Apr 30",day:"Day 13",title:"Lima \u2192 Toronto",location:"Travel Day",type:"travel",emoji:"\uD83C\uDFE0",details:[{time:"11:45 AM",text:"Lima \u2192 Bogot\u00e1",sub:"AV50 \u00b7 3h15 \u00b7 LIGHT"},{time:"3:00 PM",text:"Arrive Bogot\u00e1",sub:"1h15 layover"},{time:"4:15 PM",text:"Bogot\u00e1 \u2192 Toronto",sub:"AV204 {BULL} 6h15"},{time:"11:30 PM",text:"Arrive Toronto YYZ",sub:"Welcome home 🇨🇦"}],tips:"LIGHT = 0 checked bags. Bogot\u00e1 layover is tight.",accommodation:null,suggestions:[]}
+];
+
+var DEFAULT_PACKING={"Tech":["Laptop","Airpods","Headphones","Phone Charger","Powerbank","Phone","Wired Earphones"],"Documents & Money":["Passport","Wallet","ID","USD Cash","Travel Insurance docs"],"Hygiene":["Toothpaste","Toothbrush","Deodorant","Shampoo","Soap","Sunscreen","Lotion","Cologne","Medication"],"Trek Essentials":["Hiking Shoes","Rain Coat / Poncho","Warm Fleece / Jacket","Gloves","Thermal Base Layer","Hiking Pants","Hat / Beanie"],"Gear":["Shades","Waterproof Phone Case","Money Fanny Pack","Beach Towel","Slippers","Daypack / Backpack"],"Clothing":["Beach Clothing","Nice / Going Out Outfit","Active Clothing","Scrunchie"]};
+var DEFAULT_FLIGHTS=[
+  {route:"YYZ \u2192 BOG \u2192 LIM",date:"Apr 18",flights:"AV255 + AV051",fare:"Economy (X)"},
+  {route:"LIM \u2192 CUZ",date:"Apr 24",flights:"TBD",fare:""},
+  {route:"CUZ \u2192 LIM",date:"Apr 29",flights:"TBD",fare:""},
+  {route:"LIM \u2192 BOG \u2192 YYZ",date:"Apr 30",flights:"AV50 + AV204",fare:"LIGHT \u00b7 0 bags"}
+];
+var DEFAULT_FLIGHTNOTES={baggage:"Return: LIGHT = 0 bags\nCarry-on: 10kg, 55x40x25 + personal\nLima-Cusco: check separately",booking:"FF: 396361149\nOut: AV255+AV051\nReturn: AV50+AV204\nStatus: OK"};
+var INFO=[
+{title:"\uD83C\uDFD4\uFE0F Altitude Guide",content:"Lima: 0m (sea level)\nCusco: 3,400m (11,150 ft)\nSoraypampa: 3,900m\nSalkantay Pass: 4,650m (15,367 ft)\n\nAcclimatize 1+ day. Coca tea, hydrate, no alcohol."},
+{title:"\uD83D\uDCB0 Money & Costs",content:"Currency: Sol (PEN) ~1 USD = 3.7\nStreet food: $1-3 \u00b7 Mid-range: $8-18\nRide-hailing: $3-8\nTourist Ticket: ~$50 (16 sites)\n\nTipping: 10% restaurants, S/5-10 guides, round up taxis."},
+{title:"\uD83D\uDCF1 Practical Tips",content:"Same timezone as Toronto (EST = PET)\nUber/InDrive work great in Lima & Cusco\nTap water: NO (bottled only)\nSunscreen essential at altitude\nCoca tea helps with altitude\u2014buy in Cusco\nAsk before photographing locals"},
+{title:"\uD83C\uDF7D\uFE0F Must-Try Food",content:"Ceviche \u2014 raw fish in lime, chili & onion\nLomo Saltado \u2014 beef stir-fry with fries\nAji de Gallina \u2014 creamy shredded chicken\nAnticuchos \u2014 beef heart skewers\nPisco Sour \u2014 national cocktail\nChicha Morada \u2014 purple corn drink"},
+{title:"Spanish Basics",content:"Hello: Hola\nGoodbye: Adios / Hasta luego\nPlease: Por favor\nThank you: Gracias\nYou are welcome: De nada\nYes / No: Si / No\nExcuse me: Perdon\nI am sorry: Lo siento\nDo you speak English? Hablas ingles?\nI do not understand: No entiendo"},
+{title:"Getting Around",content:"Where is...? Donde esta...?\nHow much? Cuanto cuesta?\nToo expensive: Muy caro\nTake me to...: Llevame a...\nLeft / Right: Izquierda / Derecha\nStraight: Todo recto\nStop here: Parese aqui por favor\nAirport: El aeropuerto\nMarket: El mercado"},
+{title:"At Restaurants",content:"A table for two: Una mesa para dos\nThe menu please: La carta por favor\nWhat do you recommend? Que recomienda?\nWithout spice: Sin picante\nThe bill please: La cuenta por favor\nDelicious!: Que rico!\nWater: Agua\nBeer: Cerveza\nNo meat: Sin carne"},
+{title:"Trekking Phrases",content:"How far? A que distancia esta?\nHow long? Cuanto tiempo tarda?\nI am tired: Estoy cansado\nI feel sick: Me siento mal\nAltitude sickness: El soroche\nI need help: Necesito ayuda\nWhere is the trail? Donde esta el camino?\nBeautiful view: Que vista hermosa"},
+{title:"\uD83D\uDEA8 Emergency",content:"Police: 105 \u00b7 Fire: 116 \u00b7 Ambulance: 106\nCanadian Embassy Lima: +51-1-319-3200\nTourist Police: +51-1-460-1060\nHelp!: Ayuda!\nI need a doctor: Necesito un medico\nThief!: Ladron!"}
+];
+
+function Editable(props){
+  var value=props.value,onChange=props.onChange,style=props.style||{},multiline=props.multiline,ph=props.placeholder;
+  var _e=us(false),editing=_e[0],setEditing=_e[1];
+  var _d=us(value),draft=_d[0],setDraft=_d[1];
+  var ref=ur(null);
+  ue(function(){setDraft(value)},[value]);
+  ue(function(){if(editing&&ref.current)ref.current.focus()},[editing]);
+  if(editing){
+    var cs=Object.assign({},style,{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(78,205,196,0.4)",borderRadius:6,outline:"none",color:"inherit",font:"inherit",width:"100%",padding:"4px 8px",boxSizing:"border-box"});
+    var fin=function(){setEditing(false);onChange(draft)};
+    if(multiline)return h("textarea",{ref:ref,value:draft,onChange:function(e){setDraft(e.target.value)},onBlur:fin,onKeyDown:function(e){if(e.key==="Escape"){setDraft(value);setEditing(false)}},rows:3,style:Object.assign({},cs,{resize:"vertical",minHeight:50})});
+    return h("input",{ref:ref,value:draft,onChange:function(e){setDraft(e.target.value)},onBlur:fin,onKeyDown:function(e){if(e.key==="Enter")fin();if(e.key==="Escape"){setDraft(value);setEditing(false)}},style:cs,placeholder:ph});
+  }
+  return h("span",{onClick:function(){setEditing(true)},title:"Click to edit",style:Object.assign({},style,{cursor:"text",borderBottom:"1px dashed rgba(255,255,255,0.08)",transition:"border-color .15s",minWidth:30,display:"inline-block"}),onMouseEnter:function(e){e.currentTarget.style.borderBottomColor="rgba(78,205,196,0.4)"},onMouseLeave:function(e){e.currentTarget.style.borderBottomColor="rgba(255,255,255,0.08)"}},value||h("span",{style:{opacity:.3}},ph||"Click to edit"));
+}
+
+// ─── MINI CALENDAR ────────────────────────────────────────────────────────────
+// Parses "Mon, Apr 18" or "Apr 18" style dates into {month, day, year}
+var MONTH_NAMES=["January","February","March","April","May","June","July","August","September","October","November","December"];
+var MONTH_SHORT=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function parseTripDate(str){
+  if(!str)return null;
+  // Handles both "Mon, Apr 18" and "Apr 18" and "Apr 18, 2027"
+  var clean=str.replace(/^[A-Za-z]+,\s*/,"").trim();
+  var parts=clean.split(" ");
+  if(parts.length<2)return null;
+  var mo=MONTH_SHORT.indexOf(parts[0]);
+  if(mo<0)return null;
+  var yr=parts.length>=3?parseInt(parts[2]):2026;
+  return{month:mo,day:parseInt(parts[1]),year:isNaN(yr)?2026:yr};
+}
+function daysInMonth(month,year){return new Date(year,month+1,0).getDate()}
+function firstDayOfMonth(month,year){return new Date(year,month,1).getDay()}
+
+function MiniCal(props){
+  var activeDate=props.activeDate,tripDates=props.tripDates,onSelect=props.onSelect;
+  var labels=["S","M","T","W","T","F","S"];
+
+  // Compute range of months from first to last trip date
+  var allParsed=(tripDates||[]).map(parseTripDate).filter(Boolean);
+  allParsed.sort(function(a,b){return a.year!==b.year?a.year-b.year:a.month-b.month||a.day-b.day});
+  var months=[];
+  if(allParsed.length){
+    var first=allParsed[0],last=allParsed[allParsed.length-1];
+    var cm=first.month,cy=first.year;
+    while(cy<last.year||(cy===last.year&&cm<=last.month)){
+      months.push({month:cm,year:cy});
+      cm++;if(cm>11){cm=0;cy++;}
+    }
+  }
+  if(!months.length)months=[{month:3,year:2026}];
+
+  // Active day info
+  var activeParsed=parseTripDate(activeDate);
+
+  // Viewing month state - default to month of active date, or first trip month
+  var defaultView=activeParsed?{month:activeParsed.month,year:activeParsed.year}:months[0];
+  var _vm=us(defaultView),viewing=_vm[0],setViewing=_vm[1];
+  // Update viewing when activeDate changes
+  ue(function(){if(activeParsed)setViewing({month:activeParsed.month,year:activeParsed.year})},[activeDate]);
+
+  var vm=viewing.month,vy=viewing.year;
+  var hasPrev=months.some(function(m){return m.year<vy||(m.year===vy&&m.month<vm)});
+  var hasNext=months.some(function(m){return m.year>vy||(m.year===vy&&m.month>vm)});
+
+  // Build trip date lookup for this month
+  var tripNums={};
+  (tripDates||[]).forEach(function(d){
+    var p=parseTripDate(d);
+    if(p&&p.month===vm&&p.year===vy)tripNums[p.day]=d;
+  });
+
+  var dim=daysInMonth(vm,vy);
+  var firstDay=firstDayOfMonth(vm,vy);
+  var cells=[];
+  for(var i=0;i<firstDay;i++)cells.push(null);
+  for(var d=1;d<=dim;d++)cells.push(d);
+
+  return h("div",{style:{background:"rgba(255,255,255,0.04)",borderRadius:12,padding:"10px 10px 8px",width:"100%",maxWidth:230}},
+    h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}},
+      h("button",{onClick:function(e){e.stopPropagation();if(!hasPrev)return;var nm=vm-1<0?11:vm-1,ny=vm-1<0?vy-1:vy;setViewing({month:nm,year:ny})},style:{background:"transparent",border:"none",color:hasPrev?"#8b949e":"#2d333b",cursor:hasPrev?"pointer":"default",fontSize:14,padding:"0 4px",lineHeight:1}},"\u2039"),
+      h("div",{style:{fontSize:11,fontWeight:700,color:"#8b949e",letterSpacing:1,textTransform:"uppercase"}},MONTH_NAMES[vm].toUpperCase().slice(0,3)+" "+vy),
+      h("button",{onClick:function(e){e.stopPropagation();if(!hasNext)return;var nm=vm+1>11?0:vm+1,ny=vm+1>11?vy+1:vy;setViewing({month:nm,year:ny})},style:{background:"transparent",border:"none",color:hasNext?"#8b949e":"#2d333b",cursor:hasNext?"pointer":"default",fontSize:14,padding:"0 4px",lineHeight:1}},"\u203A")
+    ),
+    h("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,marginBottom:2}},labels.map(function(d,i){return h("div",{key:i,style:{fontSize:9,fontWeight:600,color:"#484f58",textAlign:"center",padding:"2px 0"}},d)})),
+    h("div",{style:{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1}},cells.map(function(d,i){
+      if(d===null)return h("div",{key:"e"+i});
+      var isTrip=!!tripNums[d];
+      var isAct=activeParsed&&activeParsed.day===d&&activeParsed.month===vm&&activeParsed.year===vy;
+      return h("div",{key:d,onClick:function(){if(isTrip&&onSelect)onSelect(tripNums[d])},style:{position:"relative",fontSize:11,fontWeight:isTrip?600:400,color:isAct?"#fff":isTrip?"#e6edf3":"#484f58",textAlign:"center",padding:"4px 0",borderRadius:6,background:isAct?"rgba(78,205,196,0.25)":isTrip?"rgba(255,255,255,0.04)":"transparent",cursor:isTrip?"pointer":"default",transition:"all .15s",lineHeight:1.4}},
+        d,
+        isAct?h("div",{style:{position:"absolute",top:1,right:"calc(50% - 10px)",width:5,height:5,borderRadius:"50%",background:"#ff4757",boxShadow:"0 0 6px #ff4757",animation:"pulse-dot 1.5s ease-in-out infinite"}}):null
+      );
+    }))
+  );
+}
+
+// ─── DAY CONTENT ──────────────────────────────────────────────────────────────
+function DayContent(props){
+  var day=props.day,i=props.i,tc=props.tc,upDay=props.upDay,upDet=props.upDet,addDet=props.addDet,rmDet=props.rmDet;
+  return h("div",{style:{padding:"0 16px 16px"}},
+    h("div",{style:{display:"flex",gap:12,marginBottom:12,flexWrap:"wrap"}},
+      h(Editable,{value:day.title,onChange:function(v){upDay(i,{title:v})},style:{fontSize:16,fontWeight:700},placeholder:"Title"}),
+      h(Editable,{value:day.location,onChange:function(v){upDay(i,{location:v})},style:{fontSize:13,color:"#8b949e"},placeholder:"Location"})
+    ),
+    h("div",{style:{borderTop:"1px solid "+tc.accent+"22",paddingTop:12}},
+      day.details.map(function(d,j){return h("div",{key:j,style:{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}},
+        h("div",{style:{width:62,flexShrink:0,paddingTop:2}},h(Editable,{value:d.time,onChange:function(v){upDet(i,j,{time:v})},style:{fontSize:11,fontWeight:700,color:tc.accent}})),
+        h("div",{style:{flex:1,minWidth:0}},
+          h(Editable,{value:d.text,onChange:function(v){upDet(i,j,{text:v})},style:{fontSize:14,fontWeight:500}}),
+          d.sub!==undefined?h("div",{style:{marginTop:2}},h(Editable,{value:d.sub||"",onChange:function(v){upDet(i,j,{sub:v})},style:{fontSize:12,color:"#8b949e"},placeholder:"Details"})):null
+        ),
+        h("button",{onClick:function(e){e.stopPropagation();rmDet(i,j)},style:{background:"transparent",border:"none",color:"#484f58",cursor:"pointer",fontSize:14,flexShrink:0,padding:"2px 4px",opacity:.4},onMouseEnter:function(e){e.target.style.opacity=1},onMouseLeave:function(e){e.target.style.opacity=.4}},"\u2715")
+      )}),
+      h("button",{onClick:function(){addDet(i)},style:{background:"transparent",border:"1px dashed "+tc.accent+"44",borderRadius:8,padding:"8px 14px",color:tc.accent,cursor:"pointer",fontSize:12,fontWeight:600,width:"100%",marginTop:4,opacity:.6},onMouseEnter:function(e){e.target.style.opacity=1},onMouseLeave:function(e){e.target.style.opacity=.6}},"+ Add activity")
+    ),
+    h("div",{style:{background:tc.accent+"11",border:"1px solid "+tc.accent+"22",borderRadius:10,padding:"10px 14px",marginTop:12,fontSize:13,lineHeight:1.5}},
+      h("span",{style:{fontWeight:700,color:tc.accent}},"\uD83D\uDCA1 "),
+      h(Editable,{value:day.tips,onChange:function(v){upDay(i,{tips:v})},style:{fontSize:13,color:"#c9d1d9"},multiline:true,placeholder:"Tip..."})
+    ),
+    day.suggestions&&day.suggestions.length>0?h("div",{style:{marginTop:10}},
+      h("div",{style:{fontSize:11,fontWeight:600,color:"#484f58",marginBottom:6,textTransform:"uppercase",letterSpacing:1}},"Also consider"),
+      h("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},day.suggestions.map(function(s,k){return h("span",{key:k,style:{background:"#21262d",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#c9d1d9",border:"1px solid #30363d"}},s)}))
+    ):null,
+    day.accommodation?h("div",{style:{marginTop:10,background:"#21262d",borderRadius:10,padding:"10px 14px",fontSize:13,display:"flex",alignItems:"center",gap:8}},
+      h("span",{style:{fontSize:18}},"\\uD83C\uDFD5\uFE0F"),
+      h("div",null,h("div",{style:{fontWeight:600}},"Overnight"),h(Editable,{value:day.accommodation,onChange:function(v){upDay(i,{accommodation:v})},style:{fontSize:12,color:"#8b949e"}}))
+    ):null
+  );
+}
+
+// ─── SYNC STATUS BADGE ────────────────────────────────────────────────────────────
+function SyncBadge(props){
+  var status=props.status;
+  var colors={saved:"#238636",saving:"#9e6a03",error:"#f85149"};
+  var icons={saved:"\u2713",saving:"\u21BB",error:"\u26A0"};
+  var labels={saved:"Synced",saving:"Saving\u2026",error:"Sync error"};
+  var c=colors[status]||"#9e6a03";
+  return h("div",{title:labels[status],style:{display:"inline-flex",alignItems:"center",gap:5,background:"rgba(255,255,255,0.06)",borderRadius:20,padding:"4px 10px",fontSize:11,fontWeight:600,color:c,cursor:"default",border:"1px solid "+c+"44",transition:"all .2s",userSelect:"none"}},
+    h("span",{className:status==="saving"?"sync-spin":undefined,style:{fontSize:12}},icons[status]||"\u21BB"),
+    labels[status]||"Saving\u2026"
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+function App(){
+  var _t=us("itinerary"),tab=_t[0],setTab=_t[1];
+  var _e=us(-1),expanded=_e[0],setExpanded=_e[1];
+  var _o=us(-1),overlay=_o[0],setOverlay=_o[1];
+  var _m=us(window.innerWidth<700),mobile=_m[0],setMobile=_m[1];
+  var _ac=us(null),addCat=_ac[0],setAddCat=_ac[1];
+  var _at=us(""),addText=_at[0],setAddText=_at[1];
+  var _ac2=us(null),addCat2=_ac2[0],setAddCat2=_ac2[1];
+  // Draft dates - only applied to day blocks when Done is pressed
+  var _ds=us(null),draftStart=_ds[0],setDraftStart=_ds[1];
+  var _de=us(null),draftEnd=_de[0],setDraftEnd=_de[1];
+
+  // sync state
+  var _ss=us("saving"),syncStatus=_ss[0],setSyncStatus=_ss[1];
+  var _loaded=us(false),loaded=_loaded[0],setLoaded=_loaded[1];
+
+  // data
+  var _days=us(localStore.get("peru5-days")||DEFAULT_DAYS),days=_days[0],setDays=_days[1];
+  var _pack=us(localStore.get("peru5-pack")||DEFAULT_PACKING),packing=_pack[0],setPacking=_pack[1];
+  var _chk=us(localStore.get("peru5-chk")||{}),checked=_chk[0],setChecked=_chk[1];
+  var _meta=us(localStore.get("peru5-meta")||DEFAULT_META),meta=_meta[0],setMeta=_meta[1];
+  var _fl=us(localStore.get("peru5-flights")||DEFAULT_FLIGHTS),flights=_fl[0],setFlights=_fl[1];
+  var _fn=us(localStore.get("peru5-flnotes")||DEFAULT_FLIGHTNOTES),flnotes=_fn[0],setFlnotes=_fn[1];
+
+
+  var saveTimerRef=ur(null);
+
+  // Load from Firebase on mount
+  ue(function(){
+    if(!db)return;
+    setSyncStatus("saving");
+    db.collection("trips").doc(DOC_ID).get().then(function(doc){
+      if(doc.exists){
+        var d=doc.data();
+        if(d.days)setDays(d.days);
+        if(d.packing)setPacking(d.packing);
+        if(d.checked)setChecked(d.checked);
+        if(d.meta)setMeta(d.meta);
+        if(d.flights)setFlights(d.flights);
+        if(d.flnotes)setFlnotes(d.flnotes);
+      }
+      setSyncStatus("saved");
+      setLoaded(true);
+    }).catch(function(err){
+      console.error("FB load error",err);
+      setSyncStatus("error");
+      setLoaded(true);
+    });
+  },[]);
+
+  // Debounced save to Firebase
+  function scheduleSync(newDays,newPacking,newChecked,newMeta,newFlights,newFlnotes){
+    if(!db)return;
+    setSyncStatus("saving");
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current=setTimeout(function(){
+      var payload={
+        days:newDays||days,
+        packing:newPacking||packing,
+        checked:newChecked||checked,
+        meta:newMeta||meta,
+        flights:newFlights||flights,
+        flnotes:newFlnotes||flnotes,
+        updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+      };
+      // Also save locally as backup
+      localStore.set("peru5-days",payload.days);
+      localStore.set("peru5-pack",payload.packing);
+      localStore.set("peru5-chk",payload.checked);
+      localStore.set("peru5-meta",payload.meta);
+      localStore.set("peru5-flights",payload.flights);
+      localStore.set("peru5-flnotes",payload.flnotes);
+      db.collection("trips").doc(DOC_ID).set(payload,{merge:true}).then(function(){
+        setSyncStatus("saved");
+      }).catch(function(e){
+        console.error("FB save error",e);
+        setSyncStatus("error");
+      });
+    },800);
+  }
+
+  ue(function(){var c=function(){setMobile(window.innerWidth<700)};window.addEventListener("resize",c);return function(){window.removeEventListener("resize",c)}},[]);
+  ue(function(){document.body.style.overflow=overlay>=0?"hidden":"";return function(){document.body.style.overflow=""}},[overlay]);
+
+  // Data mutations
+  var upDay=function(i,p){setDays(function(d){var n=d.map(function(x,j){return j===i?Object.assign({},x,p):x});scheduleSync(n);return n})};
+  var upDet=function(di,dj,p){setDays(function(d){var n=d.slice();n[di]=Object.assign({},n[di],{details:n[di].details.map(function(x,j){return j===dj?Object.assign({},x,p):x})});scheduleSync(n);return n})};
+  var addDet=function(di){setDays(function(d){var n=d.slice();n[di]=Object.assign({},n[di],{details:n[di].details.concat([{time:"Time",text:"New activity",sub:""}])});scheduleSync(n);return n})};
+  var rmDet=function(di,dj){setDays(function(d){var n=d.slice();n[di]=Object.assign({},n[di],{details:n[di].details.filter(function(_,j){return j!==dj})});scheduleSync(n);return n})};
+
+  var togCheck=function(item){setChecked(function(c){var n=Object.assign({},c);n[item]=!n[item];scheduleSync(undefined,undefined,n);return n})};
+  var addPack=function(cat){if(!addText.trim())return;setPacking(function(p){var n=Object.assign({},p);n[cat]=p[cat].concat([addText.trim()]);scheduleSync(undefined,n);return n});setAddText("");setAddCat(null)};
+  var rmPack=function(cat,i){var key=packing[cat][i];setPacking(function(p){var n=Object.assign({},p);n[cat]=p[cat].filter(function(_,j){return j!==i});scheduleSync(undefined,n);return n});setChecked(function(c){var n=Object.assign({},c);delete n[key];return n})};
+
+  var upMeta=function(patch){setMeta(function(m){var n=Object.assign({},m,patch);scheduleSync(undefined,undefined,undefined,n);return n})};
+  var upStat=function(idx,patch){setMeta(function(m){var ns=m.stats.map(function(s,i){return i===idx?Object.assign({},s,patch):s});var n=Object.assign({},m,{stats:ns});scheduleSync(undefined,undefined,undefined,n);return n})};
+  var upDayLabel=function(i,v){setDays(function(d){var n=d.map(function(x,j){return j===i?Object.assign({},x,{day:v}):x});scheduleSync(n);return n})};
+
+  // When start/end date changes: restamp dates, preserve ALL content
+  var upDates=function(startISO,endISO){
+    if(!startISO)return;
+    var ms=new Date(startISO+"T00:00:00"),me=new Date((endISO||startISO)+"T00:00:00");
+    if(isNaN(ms.getTime())||isNaN(me.getTime()))return;
+    var newCount=Math.max(1,Math.round((me-ms)/(1000*60*60*24))+1);
+    setDays(function(d){
+      var n=[];
+      for(var j=0;j<newCount;j++){
+        var dateStr=isoToDisplay(addDaysToISO(startISO,j));
+        if(j<d.length){
+          // Preserve ALL existing content, just update date label
+          n.push(Object.assign({},d[j],{date:dateStr,day:"Day "+(j+1)}));
+        } else {
+          // Only add blank days when extending the trip
+          n.push({id:"d"+(j+1)+"x",date:dateStr,day:"Day "+(j+1),title:"New Day",location:"",type:"flex",emoji:"\uD83D\uDCC5",details:[],tips:"",accommodation:null,suggestions:[]});
+        }
+      }
+      var nm=Object.assign({},meta,{startDate:startISO,endDate:endISO||startISO,_showDatePicker:true,stats:meta.stats.map(function(st,si){return si===0?Object.assign({},st,{n:String(newCount)}):st})});
+      setMeta(nm);
+      scheduleSync(n,undefined,undefined,nm);
+      return n;
+    });
+  };
+  var upFlight=function(i,p){setFlights(function(f){var n=f.map(function(x,j){return j===i?Object.assign({},x,p):x});scheduleSync(undefined,undefined,undefined,undefined,n);return n})};
+  var addFlight=function(){setFlights(function(f){var n=f.concat([{route:"New Route",date:"Date",flights:"Flight #",fare:""}]);scheduleSync(undefined,undefined,undefined,undefined,n);return n})};
+  var rmFlight=function(i){setFlights(function(f){var n=f.filter(function(_,j){return j!==i});scheduleSync(undefined,undefined,undefined,undefined,n);return n})};
+  var upFlnotes=function(p){setFlnotes(function(fn){var n=Object.assign({},fn,p);scheduleSync(undefined,undefined,undefined,undefined,undefined,n);return n})};
+    var dn2idx=function(dateStr){return days.findIndex(function(d){return d.date===dateStr})};
+
+  var totalP=Object.values(checked).filter(Boolean).length,totalI=Object.values(packing).flat().length;
+  var allFlags=detectFlags(days.map(function(d){return d.title+" "+d.location}).join(" "));
+  var mw=mobile?"100%":540,pd=mobile?14:20;
+  var tabs=[{id:"itinerary",l:"Trip",i:"\uD83D\uDCC5"},{id:"packing",l:"Pack",i:"\uD83C\uDF92"},{id:"flights",l:"Flights",i:"\u2708\uFE0F"},{id:"info",l:"Info",i:"\uD83D\uDCCC"}];
+  var aIdx=overlay>=0?overlay:expanded;
+  var aDate=aIdx>=0&&aIdx<days.length?days[aIdx].date:null;
+  var tDates=days.map(function(d){return d.date});
+  var oDay=overlay>=0?days[overlay]:null;
+  var oTc=oDay?(TC[oDay.type]||TC.explore):null;
+
+  return h("div",{style:{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center"}},
+
+    // OVERLAY
+    overlay>=0&&oDay?h("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:mobile?12:20,animation:"backdrop-in .2s ease"},onClick:function(){setOverlay(-1)}},
+      h("div",{style:{position:"absolute",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}),
+      h("div",{onClick:function(e){e.stopPropagation()},style:{position:"relative",width:"100%",maxWidth:500,maxHeight:"85vh",overflowY:"auto",background:oTc.bg,border:"1px solid "+oTc.accent+"55",borderRadius:18,animation:"overlay-in .25s ease",boxShadow:"0 25px 60px rgba(0,0,0,0.5), 0 0 40px "+oTc.accent+"15"}},
+        h("button",{onClick:function(){setOverlay(-1)},style:{position:"sticky",top:12,float:"right",marginRight:12,marginTop:12,background:"rgba(255,255,255,0.1)",border:"none",borderRadius:"50%",width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#e6edf3",fontSize:16,zIndex:10}},"\u2715"),
+        h("div",{style:{padding:"20px 16px 12px",display:"flex",alignItems:"center",gap:12}},
+          h("div",{style:{fontSize:32}},detectFlags(oDay.title+" "+oDay.location).pop()||oDay.emoji),
+          h("div",{style:{flex:1}},
+            h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}},
+              h("span",{style:{fontSize:12,fontWeight:700,color:oTc.accent,textTransform:"uppercase",letterSpacing:.5}},
+                h(Editable,{value:oDay.day,onChange:function(v){upDayLabel(overlay,v)},style:{fontSize:12,fontWeight:700,color:oTc.accent}})
+              ),
+              h("span",{
+                style:{fontSize:10,background:oTc.accent+"22",color:oTc.accent,padding:"2px 8px",borderRadius:20,fontWeight:600,cursor:"pointer",userSelect:"none",border:"1px solid "+oTc.accent+"44"},
+                title:"Click to change type",
+                onClick:function(e){
+                  e.stopPropagation();
+                  var types=["travel","explore","trek","flex"];
+                  var cur=oDay.type||"explore";
+                  var next=types[(types.indexOf(cur)+1)%types.length];
+                  upDay(overlay,{type:next});
+                }
+              },oTc.badge+" ✏️"),
+              h("span",{style:{fontSize:12,color:"#8b949e",marginLeft:"auto"}},oDay.date)
+            ),
+            h("div",{style:{fontSize:18,fontWeight:700}},oDay.title)
+          )
+        ),
+        h(DayContent,{day:oDay,i:overlay,tc:oTc,upDay:upDay,upDet:upDet,addDet:addDet,rmDet:rmDet})
+      )
+    ):null,
+
+    // HEADER
+    h("div",{style:{width:"100%",background:"linear-gradient(135deg,#0f2027,#203a43 50%,#2c5364)",padding:(mobile?24:36)+"px "+pd+"px "+(mobile?20:28)+"px",display:"flex",justifyContent:"center",position:"relative",overflow:"hidden"}},
+      h("div",{style:{maxWidth:mw,width:"100%"}},
+        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16}},
+          h("div",{style:{flex:1,minWidth:0}},
+            // trip name — editable
+            h("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:4}},
+              h("span",{style:{fontFamily:"'Playfair Display',serif",fontSize:mobile?30:44,fontWeight:700,lineHeight:1.1}},
+                h(Editable,{value:meta.tripName,onChange:function(v){upMeta({tripName:v})},style:{fontFamily:"'Playfair Display',serif",fontSize:mobile?30:44,fontWeight:700,lineHeight:1.1}})
+              ),
+              h("span",{style:{display:"inline-flex",alignItems:"center",gap:4,verticalAlign:"middle"}},
+  h("img",{src:"https://flagcdn.com/32x24/pe.png",alt:"🇵🇪",title:"Peru",style:{height:mobile?20:24,width:"auto",borderRadius:2,boxShadow:"0 1px 3px rgba(0,0,0,0.4)"}}),
+  h("img",{src:"https://flagcdn.com/32x24/ca.png",alt:"🇨🇦",title:"Canada",style:{height:mobile?20:24,width:"auto",borderRadius:2,boxShadow:"0 1px 3px rgba(0,0,0,0.4)"}})
+)
+            ),
+            // subtitle — editable
+            h("div",{style:{fontSize:mobile?12:14,color:"#8b949e",marginBottom:10}},
+              h(Editable,{value:meta.subtitle,onChange:function(v){upMeta({subtitle:v})},style:{fontSize:mobile?12:14,color:"#8b949e"}})
+            ),
+            // date range + picker — below title for easy mobile tap
+            h("div",{style:{marginBottom:14}},
+              h("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}},
+                h("div",{style:{fontSize:11,fontWeight:700,letterSpacing:1.5,color:"#4ecdc4",textTransform:"uppercase"}},formatDateRange(meta.startDate,meta.endDate)),
+                h("button",{
+                  onClick:function(){
+                    if(!meta._showDatePicker){setDraftStart(meta.startDate);setDraftEnd(meta.endDate);}
+                    upMeta({_showDatePicker:!meta._showDatePicker});
+                  },
+                  style:{background:"rgba(78,205,196,0.12)",border:"1px solid rgba(78,205,196,0.3)",borderRadius:8,padding:"5px 12px",fontSize:12,color:"#4ecdc4",cursor:"pointer",fontWeight:600,minHeight:36,minWidth:44}
+                },meta._showDatePicker?"Close ✕":"Edit ✏️")
+              ),
+              meta._showDatePicker?h("div",{style:{background:"rgba(0,0,0,0.3)",border:"1px solid rgba(78,205,196,0.25)",borderRadius:10,padding:"12px",marginTop:8,display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}},
+                h("div",null,
+                  h("div",{style:{fontSize:10,color:"#8b949e",marginBottom:4,fontWeight:600}},"START DATE"),
+                  h("input",{type:"date",value:draftStart||meta.startDate||"",onChange:function(e){
+                    var v=e.target.value;if(v&&v.length===10)setDraftStart(v);
+                  },style:{background:"#0d1117",border:"1px solid #30363d",borderRadius:6,padding:"8px 10px",fontSize:13,color:"#e6edf3",outline:"none",colorScheme:"dark",display:"block"}})
+                ),
+                h("div",null,
+                  h("div",{style:{fontSize:10,color:"#8b949e",marginBottom:4,fontWeight:600}},"END DATE"),
+                  h("input",{type:"date",value:draftEnd||meta.endDate||"",onChange:function(e){
+                    var v=e.target.value;if(v&&v.length===10)setDraftEnd(v);
+                  },style:{background:"#0d1117",border:"1px solid #30363d",borderRadius:6,padding:"8px 10px",fontSize:13,color:"#e6edf3",outline:"none",colorScheme:"dark",display:"block"}})
+                ),
+                h("button",{onClick:function(){
+                  var s=draftStart||meta.startDate;
+                  var e=draftEnd||meta.endDate;
+                  if(s&&e)upDates(s,e);
+                  upMeta({_showDatePicker:false});
+                },style:{background:"#238636",border:"none",borderRadius:8,padding:"8px 16px",fontSize:13,color:"#fff",cursor:"pointer",fontWeight:700}},"Done")
+              ):null
+            ),
+            // stats — all editable
+            h("div",{style:{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}},
+              meta.stats.map(function(s,i){return h("div",{key:i,style:{background:"rgba(255,255,255,0.07)",borderRadius:10,padding:mobile?"6px 12px":"8px 16px",minWidth:mobile?50:64}},
+                h("div",{style:{fontSize:mobile?15:18,fontWeight:700,color:"#4ecdc4"}},h(Editable,{value:s.n,onChange:function(v){upStat(i,{n:v})},style:{fontSize:mobile?15:18,fontWeight:700,color:"#4ecdc4"}})),
+                h("div",{style:{fontSize:mobile?10:11,color:"#8b949e"}},h(Editable,{value:s.l,onChange:function(v){upStat(i,{l:v})},style:{fontSize:mobile?10:11,color:"#8b949e"}}))
+              )})
+            ),
+            // sync badge
+            h(SyncBadge,{status:syncStatus})
+          ),
+          h(MiniCal,{activeDate:aDate,tripDates:tDates,onSelect:function(dateStr){var idx=dn2idx(dateStr);if(idx>=0){setOverlay(idx);setTab("itinerary")}}})
+        )
+      )
+    ),
+
+    // DESKTOP TABS
+    !mobile?h("div",{style:{width:"100%",display:"flex",justifyContent:"center",background:"#161b22",borderBottom:"1px solid #21262d",position:"sticky",top:0,zIndex:50}},
+      h("div",{style:{maxWidth:mw,width:"100%",display:"flex"}},
+        tabs.map(function(t){return h("button",{key:t.id,onClick:function(){setTab(t.id)},style:{flex:1,background:"transparent",border:"none",padding:"14px 0",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,color:tab===t.id?"#4ecdc4":"#484f58",borderBottom:tab===t.id?"2px solid #4ecdc4":"2px solid transparent",fontSize:14,fontWeight:600,transition:"all .15s"}},h("span",{style:{fontSize:18}},t.i),t.l)})
+      )
+    ):null,
+
+    // CONTENT
+    h("div",{style:{maxWidth:mw,width:"100%",padding:"16px "+pd+"px "+(mobile?90:40)+"px"}},
+
+      // ITINERARY
+      tab==="itinerary"?days.map(function(day,i){
+        var tc=TC[day.type]||TC.explore,isOpen=expanded===i,flags=detectFlags(day.title+" "+day.location);
+        return h("div",{key:day.id,style:{marginBottom:8,borderRadius:14,overflow:"hidden",border:isOpen?"1px solid "+tc.accent+"44":"1px solid #21262d",background:isOpen?tc.bg:"#161b22",transition:"all .2s"}},
+          h("div",{style:{display:"flex",alignItems:"center",padding:"14px 16px",gap:12,cursor:"pointer"},onClick:function(){setExpanded(isOpen?-1:i)}},
+            h("div",{style:{fontSize:28,flexShrink:0}},flags.length>0?flags[flags.length-1]:day.emoji),
+            h("div",{style:{flex:1,minWidth:0}},
+              h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:2}},
+                h("span",{style:{fontSize:11,fontWeight:700,color:tc.accent,textTransform:"uppercase",letterSpacing:.5}},day.day),
+                h("span",{
+                style:{fontSize:10,background:tc.accent+"22",color:tc.accent,padding:"2px 8px",borderRadius:20,fontWeight:600,cursor:"pointer",userSelect:"none"},
+                title:"Click to change type",
+                onClick:function(e){
+                  e.stopPropagation();
+                  var types=["travel","explore","trek","flex"];
+                  var cur=day.type||"explore";
+                  var next=types[(types.indexOf(cur)+1)%types.length];
+                  upDay(i,{type:next});
+                }
+              },tc.badge+" ✏️")
+              ),
+              h("div",{style:{fontSize:15,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},day.title),
+              h("div",{style:{fontSize:12,color:"#8b949e"}},day.date)
+            ),
+            h("div",{style:{fontSize:14,color:"#484f58",transform:isOpen?"rotate(180deg)":"none",transition:"transform .2s",flexShrink:0}},"\u25BC")
+          ),
+          isOpen?h(DayContent,{day:day,i:i,tc:tc,upDay:upDay,upDet:upDet,addDet:addDet,rmDet:rmDet}):null
+        );
+      }):null,
+
+      // PACKING
+      tab==="packing"?h("div",null,
+        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}},
+          h("div",{style:{fontSize:11,color:"#484f58",textTransform:"uppercase",letterSpacing:1.5,fontWeight:600}},"Packing List"),
+          h("div",{style:{background:totalP===totalI&&totalI>0?"#238636":"#21262d",borderRadius:20,padding:"4px 14px",fontSize:13,fontWeight:600,color:totalP===totalI&&totalI>0?"#fff":"#8b949e"}},totalP+"/"+totalI)
+        ),
+        h("div",{style:{background:"#21262d",borderRadius:4,height:6,marginBottom:18,overflow:"hidden"}},h("div",{style:{height:"100%",borderRadius:4,background:"linear-gradient(90deg,#4ecdc4,#44b09e)",width:(totalI>0?(totalP/totalI)*100:0)+"%",transition:"width .3s"}})),
+        Object.entries(packing).map(function(entry){var cat=entry[0],items=entry[1];var cc=items.filter(function(x){return checked[x]}).length;
+          return h("div",{key:cat,style:{marginBottom:18}},
+            h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},h("div",{style:{fontSize:13,fontWeight:700,color:"#c9d1d9"}},cat),h("div",{style:{fontSize:11,color:cc===items.length&&items.length>0?"#4ecdc4":"#484f58"}},cc===items.length&&items.length>0?"\u2713 Done":cc+"/"+items.length)),
+            h("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
+              items.map(function(item,idx){return h("div",{key:item+idx,style:{position:"relative",display:"inline-flex"}},
+                h("button",{onClick:function(){togCheck(item)},style:{background:checked[item]?"#238636":"#161b22",border:checked[item]?"1px solid #2ea043":"1px solid #30363d",borderRadius:20,padding:"7px 14px",paddingRight:28,fontSize:13,color:checked[item]?"#fff":"#c9d1d9",cursor:"pointer",transition:"all .15s",textDecoration:checked[item]?"line-through":"none",opacity:checked[item]?.65:1}},(checked[item]?"\u2713 ":"")+item),
+                h("button",{onClick:function(){rmPack(cat,idx)},style:{position:"absolute",right:6,top:"50%",transform:"translateY(-50%)",background:"transparent",border:"none",color:"#484f58",cursor:"pointer",fontSize:11,padding:"2px 4px",opacity:.3},onMouseEnter:function(e){e.target.style.opacity=1},onMouseLeave:function(e){e.target.style.opacity=.3}},"\u2715")
+              )}),
+              addCat===cat?h("div",{style:{display:"flex",gap:4}},h("input",{value:addText,onChange:function(e){setAddText(e.target.value)},onKeyDown:function(e){if(e.key==="Enter")addPack(cat);if(e.key==="Escape"){setAddCat(null);setAddText("")}},autoFocus:true,placeholder:"Item name",style:{background:"#0d1117",border:"1px solid #4ecdc4",borderRadius:20,padding:"6px 12px",fontSize:13,color:"#e6edf3",outline:"none",width:130}}),h("button",{onClick:function(){addPack(cat)},style:{background:"#238636",border:"none",borderRadius:20,padding:"6px 12px",fontSize:12,color:"#fff",cursor:"pointer",fontWeight:600}},"Add")):h("button",{onClick:function(){setAddCat(cat)},style:{background:"transparent",border:"1px dashed #30363d",borderRadius:20,padding:"7px 14px",fontSize:13,color:"#484f58",cursor:"pointer"}},"+ Add")
+            )
+          )
+        }),
+        h("button",{onClick:function(){setChecked({});scheduleSync(undefined,undefined,{})},style:{marginTop:8,background:"transparent",border:"1px solid #21262d",borderRadius:10,padding:"10px 20px",fontSize:13,color:"#484f58",cursor:"pointer",width:"100%"}},"Reset all checkmarks")
+      ):null,
+
+      // FLIGHTS
+      tab==="flights"?h("div",null,
+        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
+          h("div",{style:{fontSize:11,color:"#484f58",textTransform:"uppercase",letterSpacing:1.5,fontWeight:600}},"Flight Summary"),
+          h("button",{onClick:addFlight,style:{background:"transparent",border:"1px dashed #30363d",borderRadius:8,padding:"5px 12px",fontSize:12,color:"#484f58",cursor:"pointer"}},"+ Add flight")
+        ),
+        flights.map(function(f,i){
+          var fl=detectFlags(f.route);
+          return h("div",{key:i,style:{background:"#161b22",border:"1px solid #21262d",borderRadius:14,padding:"14px 16px",marginBottom:8,position:"relative"}},
+            h("button",{onClick:function(){rmFlight(i)},style:{position:"absolute",top:10,right:10,background:"transparent",border:"none",color:"#484f58",cursor:"pointer",fontSize:13,opacity:.4,lineHeight:1},onMouseEnter:function(e){e.target.style.opacity=1},onMouseLeave:function(e){e.target.style.opacity=.4}},"\u00D7"),
+            h("div",{style:{paddingRight:20}},
+              h("div",{style:{fontSize:16,fontWeight:700,marginBottom:5,display:"flex",gap:5,alignItems:"center",flexWrap:"wrap"}},
+                fl.length?h("span",null,fl.join(" ")):null,
+                h(Editable,{value:f.route,onChange:function(v){upFlight(i,{route:v})},style:{fontSize:16,fontWeight:700},placeholder:"Route"})
+              ),
+              h("div",{style:{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:4}},
+                h(Editable,{value:f.date,onChange:function(v){upFlight(i,{date:v})},style:{fontSize:13,color:"#8b949e"},placeholder:"Date"}),
+                h("span",{style:{color:"#30363d"}},"\u00B7"),
+                h(Editable,{value:f.flights,onChange:function(v){upFlight(i,{flights:v})},style:{fontSize:13,color:"#8b949e"},placeholder:"Flight #"})
+              ),
+              h(Editable,{value:f.fare||"",onChange:function(v){upFlight(i,{fare:v})},style:{fontSize:12,color:"#4ecdc4"},placeholder:"Fare / class (optional)"})
+            )
+          );
+        }),
+        h("div",{style:{background:"#161b22",border:"1px solid #21262d",borderRadius:14,padding:16,marginTop:8}},
+          h("div",{style:{fontSize:13,fontWeight:700,color:"#ffb347",marginBottom:8}},"\u26A0\uFE0F Baggage"),
+          h(Editable,{value:flnotes.baggage,onChange:function(v){upFlnotes({baggage:v})},style:{fontSize:13,color:"#c9d1d9",lineHeight:1.8,whiteSpace:"pre-wrap",display:"block"},multiline:true,placeholder:"Baggage notes..."})
+        ),
+        h("div",{style:{background:"#161b22",border:"1px solid #21262d",borderRadius:14,padding:16,marginTop:8}},
+          h("div",{style:{fontSize:13,fontWeight:700,color:"#4ecdc4",marginBottom:8}},"\uD83D\uDD17 Booking"),
+          h(Editable,{value:flnotes.booking,onChange:function(v){upFlnotes({booking:v})},style:{fontSize:13,color:"#c9d1d9",lineHeight:1.8,whiteSpace:"pre-wrap",display:"block"},multiline:true,placeholder:"Booking reference..."})
+        )
+      ):null,
+
+      // INFO
+      tab==="info"?INFO.map(function(infoCard,i){return h("div",{key:i,style:{background:"#161b22",border:"1px solid #21262d",borderRadius:14,padding:16,marginBottom:8}},h("div",{style:{fontSize:14,fontWeight:700,marginBottom:10}},infoCard.title),h("div",{style:{fontSize:13,lineHeight:1.8,color:"#c9d1d9",whiteSpace:"pre-line"}},infoCard.content))}):null
+    ),
+
+    // MOBILE NAV
+    mobile?h("div",{style:{position:"fixed",bottom:0,left:0,width:"100%",background:"#0d1117ee",borderTop:"1px solid #21262d",display:"flex",zIndex:100,backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",paddingBottom:"env(safe-area-inset-bottom, 0px)"}},
+      tabs.map(function(t){return h("button",{key:t.id,onClick:function(){setTab(t.id)},style:{flex:1,background:"transparent",border:"none",padding:"12px 0 10px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:tab===t.id?"#4ecdc4":"#484f58",transition:"color .15s"}},h("span",{style:{fontSize:20}},t.i),h("span",{style:{fontSize:10,fontWeight:600,letterSpacing:.5}},t.l),tab===t.id?h("div",{style:{width:4,height:4,borderRadius:"50%",background:"#4ecdc4"}}):null)})
+    ):null
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+</script>
+</body>
+</html>
