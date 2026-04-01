@@ -211,33 +211,8 @@ function DayContent(props){
     ),
     h("div",{style:{borderTop:"1px solid "+tc.accent+"22",paddingTop:12}},
       day.details.map(function(d,j){
-        var isDragging=dragIdx===j;
-        var isOver=overIdx===j&&dragIdx!==j;
-        return h("div",{
-          key:j,
-          draggable:true,
-          onDragStart:function(e){e.dataTransfer.effectAllowed="move";setDragIdx(j)},
-          onDragEnd:function(){
-            if(dragIdx!==null&&overIdx!==null&&dragIdx!==overIdx){moveDet(i,dragIdx,overIdx);}
-            setDragIdx(null);setOverIdx(null);
-          },
-          onDragOver:function(e){e.preventDefault();e.dataTransfer.dropEffect="move";setOverIdx(j)},
-          onDragLeave:function(){setOverIdx(null)},
-          onDrop:function(e){e.preventDefault()},
-          style:{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start",
-            opacity:isDragging?0.4:1,
-            background:isOver?"rgba(78,205,196,0.08)":"transparent",
-            borderRadius:8,
-            borderTop:isOver?"2px solid #4ecdc4":"2px solid transparent",
-            transition:"background .1s, border-color .1s, opacity .15s",
-            cursor:"grab"
-          }
-        },
-          h("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",width:18,flexShrink:0,cursor:"grab",color:"#484f58",fontSize:12,paddingTop:2,gap:2},title:"Drag to reorder"},
-            h("div",{style:{width:12,height:2,background:"currentColor",borderRadius:1}}),
-            h("div",{style:{width:12,height:2,background:"currentColor",borderRadius:1}}),
-            h("div",{style:{width:12,height:2,background:"currentColor",borderRadius:1}})
-          ),
+        return h("div",{key:j,style:{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}},
+
           h("div",{style:{width:62,flexShrink:0,paddingTop:2}},h(Editable,{value:d.time,onChange:function(v){upDet(i,j,{time:v})},style:{fontSize:11,fontWeight:700,color:tc.accent}})),
           h("div",{style:{flex:1,minWidth:0}},
             h(Editable,{value:d.text,onChange:function(v){upDet(i,j,{text:v})},style:{fontSize:14,fontWeight:500}}),
