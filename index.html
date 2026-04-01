@@ -334,9 +334,44 @@ function App(){
   ue(function(){var c=function(){setMobile(window.innerWidth<700)};window.addEventListener("resize",c);return function(){window.removeEventListener("resize",c)}},[]);
   ue(function(){document.body.style.overflow=overlay>=0?"hidden":"";return function(){document.body.style.overflow=""}},[overlay]);
 
+
+  // Sort details chronologically by time field
+  var sortDetails=function(details){
+    function timeToMin(t){
+      if(!t||typeof t!=="string")return 9999;
+      var s=t.trim().replace(/^~/,"").toLowerCase();
+      // Named times
+      var named={
+        "early am":0,"pre-dawn":30,"4am":240,"4:00 am":240,
+        "am":480,"morning":480,"midday":720,"noon":720,
+        "12:00 pm":720,"afternoon":780,"pm":780,
+        "late am":660,"late pm":930,
+        "evening":1080,"night":1140
+      };
+      if(named[s]!==undefined)return named[s];
+      // HH:MM AM/PM
+      var m=s.match(/^(d{1,2})(?::(d{2}))?s*(am|pm)?$/);
+      if(m){
+        var h=parseInt(m[1]),mn=parseInt(m[2]||0),mer=m[3];
+        if(mer==="pm"&&h!==12)h+=12;
+        if(mer==="am"&&h===12)h=0;
+        return h*60+mn;
+      }
+      // Time ranges like "5-7 PM" — use start
+      var r=s.match(/^(d{1,2})(?::(d{2}))?[s-]+d/);
+      if(r){
+        var h2=parseInt(r[1]),mn2=parseInt(r[2]||0);
+        if(s.indexOf("pm")>=0&&h2!==12)h2+=12;
+        return h2*60+mn2;
+      }
+      return 9999; // unknown times go to end
+    }
+    return details.slice().sort(function(a,b){return timeToMin(a.time)-timeToMin(b.time)});
+  };
+
   // Data mutations
   var upDay=function(i,p){setDays(function(d){var n=d.map(function(x,j){return j===i?Object.assign({},x,p):x});scheduleSync(n);return n})};
-  var upDet=function(di,dj,p){setDays(function(d){var n=d.slice();n[di]=Object.assign({},n[di],{details:n[di].details.map(function(x,j){return j===dj?Object.assign({},x,p):x})});scheduleSync(n);return n})};
+  var upDet=function(di,dj,p){setDays(function(d){var n=d.slice();var updated=n[di].details.map(function(x,j){return j===dj?Object.assign({},x,p):x});n[di]=Object.assign({},n[di],{details:sortDetails(updated)});scheduleSync(n);return n})};
   var addDet=function(di){setDays(function(d){var n=d.slice();n[di]=Object.assign({},n[di],{details:n[di].details.concat([{time:"Time",text:"New activity",sub:""}])});scheduleSync(n);return n})};
   var rmDet=function(di,dj){setDays(function(d){var n=d.slice();n[di]=Object.assign({},n[di],{details:n[di].details.filter(function(_,j){return j!==dj})});scheduleSync(n);return n})};
 
