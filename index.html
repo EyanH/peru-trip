@@ -305,12 +305,16 @@ function App(){
     "peru":{"lat":-12.05,"lon":-77.04}
   };
   function getCityCoords(title, location){
-    // Search both title and location fields
-    var combined=((title||"")+" "+(location||"")).toLowerCase();
-    // Try longest/most specific matches first
+    // Strip arrows and special chars, search both title and location
+    var combined=((title||"")+" "+(location||"")).toLowerCase().replace(/[→\u2192\u2013\u2014]/g," ");
     var cities=Object.keys(CITY_COORDS).sort(function(a,b){return b.length-a.length;});
     for(var i=0;i<cities.length;i++){if(combined.indexOf(cities[i])>=0)return CITY_COORDS[cities[i]];}
-    // Travel days default to Lima (start location) if nothing found
+    // Travel/transit days: try to detect destination from title
+    if(combined.indexOf("cusco")>=0||combined.indexOf("cuz")>=0)return CITY_COORDS["cusco"];
+    if(combined.indexOf("lima")>=0)return CITY_COORDS["lima"];
+    if(combined.indexOf("toronto")>=0||combined.indexOf("yyz")>=0)return CITY_COORDS["toronto"];
+    if(combined.indexOf("bogot")>=0)return CITY_COORDS["bogota"];
+    // Generic travel days default to lima
     if(combined.indexOf("travel")>=0||combined.indexOf("transit")>=0)return CITY_COORDS["lima"];
     return null;
   }
@@ -368,10 +372,15 @@ function App(){
     }).catch(function(){setWeather(function(w){var n=Object.assign({},w);n[dayObj.id]={loading:false,error:true};return n;});});
   }
 
-  // Fetch weather once days load
+  // Fetch weather once days load, then refresh every hour
   ue(function(){
     if(!loaded||!days.length)return;
     days.forEach(function(day){fetchWeather(day);});
+    // Auto-refresh every 60 minutes
+    var interval=setInterval(function(){
+      days.forEach(function(day){fetchWeather(day);});
+    },60*60*1000);
+    return function(){clearInterval(interval);};
   },[loaded]);
 
   // Load from Firebase on mount
@@ -558,7 +567,7 @@ function App(){
       var mediaType=file.type;
       fetch("https://api.anthropic.com/v1/messages",{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{"Content-Type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
         body:JSON.stringify({
           model:"claude-sonnet-4-20250514",
           max_tokens:1000,
