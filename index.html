@@ -201,26 +201,21 @@ function MiniCal(props){
 
 // ─── DAY CONTENT ──────────────────────────────────────────────────────────────
 function DayContent(props){
-  var day=props.day,i=props.i,tc=props.tc,upDay=props.upDay,upDet=props.upDet,addDet=props.addDet,rmDet=props.rmDet,moveDet=props.moveDet;
-  var _drag=us(null),dragIdx=_drag[0],setDragIdx=_drag[1];
-  var _over=us(null),overIdx=_over[0],setOverIdx=_over[1];
+  var day=props.day,i=props.i,tc=props.tc,upDay=props.upDay,upDet=props.upDet,addDet=props.addDet,rmDet=props.rmDet;
   return h("div",{style:{padding:"0 16px 16px"}},
     h("div",{style:{display:"flex",gap:12,marginBottom:12,flexWrap:"wrap"}},
       h(Editable,{value:day.title,onChange:function(v){upDay(i,{title:v})},style:{fontSize:16,fontWeight:700},placeholder:"Title"}),
       h(Editable,{value:day.location,onChange:function(v){upDay(i,{location:v})},style:{fontSize:13,color:"#8b949e"},placeholder:"Location"})
     ),
     h("div",{style:{borderTop:"1px solid "+tc.accent+"22",paddingTop:12}},
-      day.details.map(function(d,j){
-        return h("div",{key:j,style:{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}},
-
-          h("div",{style:{width:62,flexShrink:0,paddingTop:2}},h(Editable,{value:d.time,onChange:function(v){upDet(i,j,{time:v})},style:{fontSize:11,fontWeight:700,color:tc.accent}})),
-          h("div",{style:{flex:1,minWidth:0}},
-            h(Editable,{value:d.text,onChange:function(v){upDet(i,j,{text:v})},style:{fontSize:14,fontWeight:500}}),
-            d.sub!==undefined?h("div",{style:{marginTop:2}},h(Editable,{value:d.sub||"",onChange:function(v){upDet(i,j,{sub:v})},style:{fontSize:12,color:"#8b949e"},placeholder:"Details"})):null
-          ),
-          h("button",{onClick:function(e){e.stopPropagation();rmDet(i,j)},style:{background:"transparent",border:"none",color:"#484f58",cursor:"pointer",fontSize:14,flexShrink:0,padding:"2px 4px",opacity:.4},onMouseEnter:function(e){e.target.style.opacity=1},onMouseLeave:function(e){e.target.style.opacity=.4}},"\u2715")
-        );
-      }),
+      day.details.map(function(d,j){return h("div",{key:j,style:{display:"flex",gap:10,marginBottom:10,alignItems:"flex-start"}},
+        h("div",{style:{width:62,flexShrink:0,paddingTop:2}},h(Editable,{value:d.time,onChange:function(v){upDet(i,j,{time:v})},style:{fontSize:11,fontWeight:700,color:tc.accent}})),
+        h("div",{style:{flex:1,minWidth:0}},
+          h(Editable,{value:d.text,onChange:function(v){upDet(i,j,{text:v})},style:{fontSize:14,fontWeight:500}}),
+          d.sub!==undefined?h("div",{style:{marginTop:2}},h(Editable,{value:d.sub||"",onChange:function(v){upDet(i,j,{sub:v})},style:{fontSize:12,color:"#8b949e"},placeholder:"Details"})):null
+        ),
+        h("button",{onClick:function(e){e.stopPropagation();rmDet(i,j)},style:{background:"transparent",border:"none",color:"#484f58",cursor:"pointer",fontSize:14,flexShrink:0,padding:"2px 4px",opacity:.4},onMouseEnter:function(e){e.target.style.opacity=1},onMouseLeave:function(e){e.target.style.opacity=.4}},"\u2715")
+      )}),
       h("button",{onClick:function(){addDet(i)},style:{background:"transparent",border:"1px dashed "+tc.accent+"44",borderRadius:8,padding:"8px 14px",color:tc.accent,cursor:"pointer",fontSize:12,fontWeight:600,width:"100%",marginTop:4,opacity:.6},onMouseEnter:function(e){e.target.style.opacity=1},onMouseLeave:function(e){e.target.style.opacity=.6}},"+ Add activity")
     ),
     h("div",{style:{background:tc.accent+"11",border:"1px solid "+tc.accent+"22",borderRadius:10,padding:"10px 14px",marginTop:12,fontSize:13,lineHeight:1.5}},
@@ -281,6 +276,67 @@ function App(){
 
 
   var saveTimerRef=ur(null);
+
+  // Weather state: {dayId: {temp, condition, icon, warning, loading}}
+  var _wx=us({}),weather=_wx[0],setWeather=_wx[1];
+  // Scan import state
+  var _scan=us(null),scanResult=_scan[0],setScanResult=_scan[1];
+  var _scanImg=us(null),scanImg=_scanImg[0],setScanImg=_scanImg[1];
+  var _scanning=us(false),scanning=_scanning[0],setScanning=_scanning[1];
+  var _showScan=us(false),showScan=_showScan[0],setShowScan=_showScan[1];
+
+  // Fetch weather for all days (Open-Meteo, free, no key)
+  // Location map: city name -> {lat, lon}
+  var CITY_COORDS={"lima":{"lat":-12.05,"lon":-77.04},"cusco":{"lat":-13.52,"lon":-71.97},"toronto":{"lat":43.65,"lon":-79.38},"bogota":{"lat":4.71,"lon":-74.07},"soraypampa":{"lat":-13.58,"lon":-72.12}};
+  function getCityCoords(location){
+    if(!location)return null;
+    var l=location.toLowerCase();
+    for(var city in CITY_COORDS){if(l.indexOf(city)>=0)return CITY_COORDS[city];}
+    return null;
+  }
+  function fetchWeather(dayObj){
+    var coords=getCityCoords(dayObj.location);
+    if(!coords)return;
+    var dateStr=dayObj.date; // e.g. "Sat, Apr 18"
+    // Parse date to ISO for Open-Meteo
+    var months={"Jan":1,"Feb":2,"Mar":3,"Apr":4,"May":5,"Jun":6,"Jul":7,"Aug":8,"Sep":9,"Oct":10,"Nov":11,"Dec":12};
+    var parts=dateStr.replace(/^[A-Za-z]+,\s*/,"").split(" ");
+    if(parts.length<2)return;
+    var mo=months[parts[0]],dy=parseInt(parts[1]),yr=2026;
+    if(!mo)return;
+    var isoDate=yr+"-"+(mo<10?"0":"")+mo+"-"+(dy<10?"0":"")+dy;
+    var url="https://api.open-meteo.com/v1/forecast?latitude="+coords.lat+"&longitude="+coords.lon+"&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto&start_date="+isoDate+"&end_date="+isoDate;
+    setWeather(function(w){var n=Object.assign({},w);n[dayObj.id]={loading:true};return n;});
+    fetch(url).then(function(r){return r.json();}).then(function(data){
+      var d=data.daily;
+      if(!d||!d.weathercode)return;
+      var code=d.weathercode[0],tmax=Math.round(d.temperature_2m_max[0]),tmin=Math.round(d.temperature_2m_min[0]),precip=d.precipitation_sum[0];
+      // WMO weather codes
+      var icon="\u2600\uFE0F",condition="Clear",warning=null;
+      if(code===0)           {icon="\u2600\uFE0F";condition="Sunny";}
+      else if(code<=2)       {icon="\u26C5";condition="Partly cloudy";}
+      else if(code===3)      {icon="\u2601\uFE0F";condition="Overcast";}
+      else if(code<=49)      {icon="\uD83C\uDF2B\uFE0F";condition="Foggy";}
+      else if(code<=59)      {icon="\uD83C\uDF27\uFE0F";condition="Drizzle";}
+      else if(code<=69)      {icon="\uD83C\uDF27\uFE0F";condition="Rain";}
+      else if(code<=79)      {icon="\u2744\uFE0F";condition="Snow";}
+      else if(code<=82)      {icon="\uD83C\uDF27\uFE0F";condition="Rain showers";}
+      else if(code<=84)      {icon="\u26C8\uFE0F";condition="Snow showers";}
+      else if(code<=99)      {icon="\u26A1";condition="Thunderstorm";warning="\u26A1 Thunderstorm expected";}
+      if(!warning&&precip>10) warning="\uD83C\uDF27\uFE0F Heavy rain ("+precip+"mm)";
+      if(!warning&&tmax>32)   warning="\uD83D\uDD25 Extreme heat ("+tmax+"\u00B0C)";
+      if(!warning&&tmin<0)    warning="\u2744\uFE0F Freezing temps ("+tmin+"\u00B0C)";
+      setWeather(function(w){var n=Object.assign({},w);n[dayObj.id]={loading:false,icon:icon,condition:condition,tmax:tmax,tmin:tmin,warning:warning};return n;});
+    }).catch(function(){
+      setWeather(function(w){var n=Object.assign({},w);n[dayObj.id]={loading:false,error:true};return n;});
+    });
+  }
+
+  // Fetch weather once days load
+  ue(function(){
+    if(!loaded||!days.length)return;
+    days.forEach(function(day){if(getCityCoords(day.location))fetchWeather(day);});
+  },[loaded]);
 
   // Load from Firebase on mount
   ue(function(){
@@ -389,7 +445,6 @@ function App(){
   var upDet=function(di,dj,p){setDays(function(d){var n=d.slice();var updated=n[di].details.map(function(x,j){return j===dj?Object.assign({},x,p):x});n[di]=Object.assign({},n[di],{details:sortDetails(updated)});scheduleSync(n);return n})};
   var addDet=function(di){setDays(function(d){var n=d.slice();n[di]=Object.assign({},n[di],{details:n[di].details.concat([{time:"Time",text:"New activity",sub:""}])});scheduleSync(n);return n})};
   var rmDet=function(di,dj){setDays(function(d){var n=d.slice();n[di]=Object.assign({},n[di],{details:n[di].details.filter(function(_,j){return j!==dj})});scheduleSync(n);return n})};
-  var moveDet=function(di,fromIdx,toIdx){setDays(function(d){var n=d.slice();var dets=n[di].details.slice();var item=dets.splice(fromIdx,1)[0];dets.splice(toIdx,0,item);n[di]=Object.assign({},n[di],{details:dets});scheduleSync(n);return n})};
 
   var togCheck=function(item){setChecked(function(c){var n=Object.assign({},c);n[item]=!n[item];scheduleSync(undefined,undefined,n);return n})};
   var addPack=function(cat){if(!addText.trim())return;setPacking(function(p){var n=Object.assign({},p);n[cat]=p[cat].concat([addText.trim()]);scheduleSync(undefined,n);return n});setAddText("");setAddCat(null)};
@@ -439,6 +494,83 @@ function App(){
   var oDay=overlay>=0?days[overlay]:null;
   var oTc=oDay?(TC[oDay.type]||TC.explore):null;
 
+
+  // ─── SCAN IMPORT MODAL ───────────────────────────────────────────────────
+  function handleScanFile(file){
+    if(!file||!file.type.startsWith("image/"))return;
+    var reader=new FileReader();
+    reader.onload=function(e){
+      setScanImg(e.target.result);
+      setScanning(true);
+      setScanResult(null);
+      // Call Anthropic API with the image
+      var b64=e.target.result.split(",")[1];
+      var mediaType=file.type;
+      fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:"claude-sonnet-4-20250514",
+          max_tokens:1000,
+          messages:[{role:"user",content:[
+            {type:"image",source:{type:"base64",media_type:mediaType,data:b64}},
+            {type:"text",text:"Extract all booking/travel info from this screenshot. Return ONLY valid JSON with this shape (omit fields you cannot find):\n{\"type\":\"flight|hotel|activity|other\",\"title\":\"string\",\"date\":\"Month DD e.g. Apr 18\",\"time\":\"HH:MM AM/PM\",\"endTime\":\"HH:MM AM/PM\",\"location\":\"string\",\"flightNumber\":\"string\",\"airline\":\"string\",\"confirmation\":\"string\",\"from\":\"string\",\"to\":\"string\",\"notes\":\"string\"}\nReturn ONLY the JSON object, no markdown."}
+          ]}]
+        })
+      }).then(function(r){return r.json();}).then(function(data){
+        var text=data.content&&data.content[0]&&data.content[0].text;
+        try{
+          var parsed=JSON.parse(text.replace(/```json|```/g,"").trim());
+          setScanResult(parsed);
+        }catch(e){setScanResult({error:"Could not parse booking info from this image."});}
+        setScanning(false);
+      }).catch(function(){setScanResult({error:"API error. Try again."});setScanning(false);});
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function applyScannedBooking(result){
+    // Find matching day by date
+    var months={"Jan":1,"Feb":2,"Mar":3,"Apr":4,"May":5,"Jun":6,"Jul":7,"Aug":8,"Sep":9,"Oct":10,"Nov":11,"Dec":12};
+    function parseDate(str){if(!str)return null;var p=str.split(" ");return p.length===2?{mo:months[p[0]],dy:parseInt(p[1])}:null;}
+    var target=parseDate(result.date);
+    var dayIdx=-1;
+    if(target){
+      dayIdx=days.findIndex(function(d){
+        var p=d.date.replace(/^[A-Za-z]+,\s*/,"").split(" ");
+        return p.length===2&&months[p[0]]===target.mo&&parseInt(p[1])===target.dy;
+      });
+    }
+    // Check duplicate
+    if(dayIdx>=0&&result.title){
+      var existing=days[dayIdx].details.find(function(det){
+        return det.text&&det.text.toLowerCase().indexOf(result.title.toLowerCase())>=0;
+      });
+      if(existing){
+        alert("\uD83D\uDD04 Duplicate detected: \""+result.title+"\" already exists on this day.");
+        return;
+      }
+    }
+    if(result.type==="flight"&&result.flightNumber){
+      // Add to flights tab
+      var newFlight={
+        route:(result.from||"?")+"→"+(result.to||"?"),
+        date:result.date||"",
+        flights:result.flightNumber+(result.airline?" ("+result.airline+")":""),
+        fare:result.confirmation?"Conf: "+result.confirmation:""
+      };
+      var isDupeFlight=flights.some(function(f){return f.flights&&f.flights.indexOf(result.flightNumber)>=0;});
+      if(isDupeFlight){alert("\uD83D\uDD04 Flight "+result.flightNumber+" already in your Flights tab.");return;}
+      setFlights(function(f){var n=f.concat([newFlight]);scheduleSync(undefined,undefined,undefined,undefined,n);return n;});
+    }
+    if(dayIdx>=0){
+      var det={time:result.time||"",text:result.title||(result.type||"Booking"),sub:result.notes||result.confirmation||""};
+      setDays(function(d){var n=d.slice();n[dayIdx]=Object.assign({},n[dayIdx],{details:n[dayIdx].details.concat([det])});if(result.type==="hotel"&&result.title)n[dayIdx]=Object.assign({},n[dayIdx],{accommodation:result.title});scheduleSync(n);return n;});
+    }
+    alert("\u2705 Added to your itinerary!"+(result.type==="flight"?" Check the Flights tab too.":""));
+    setShowScan(false);setScanResult(null);setScanImg(null);
+  }
+
   return h("div",{style:{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center"}},
 
     // OVERLAY
@@ -464,12 +596,66 @@ function App(){
                   upDay(overlay,{type:next});
                 }
               },oTc.badge+" ✏️"),
-              h("span",{style:{fontSize:12,color:"#8b949e",marginLeft:"auto"}},oDay.date)
+              h("div",{style:{marginLeft:"auto",textAlign:"right"}},
+                h("div",{style:{fontSize:12,color:"#8b949e"}},oDay.date),
+                weather[oDay.id]&&!weather[oDay.id].loading?h("div",{style:{fontSize:11,color:"#8b949e",marginTop:2,display:"flex",alignItems:"center",gap:4,justifyContent:"flex-end"}},
+                  h("span",null,weather[oDay.id].icon),
+                  h("span",null,weather[oDay.id].tmax+"\u00B0/"+weather[oDay.id].tmin+"\u00B0C"),
+                  weather[oDay.id].warning?h("span",{style:{color:"#ff6b6b",fontWeight:600}},weather[oDay.id].warning):null
+                ):null
+              )
             ),
             h("div",{style:{fontSize:18,fontWeight:700}},oDay.title)
           )
         ),
-        h(DayContent,{day:oDay,i:overlay,tc:oTc,upDay:upDay,upDet:upDet,addDet:addDet,rmDet:rmDet,moveDet:moveDet})
+        h(DayContent,{day:oDay,i:overlay,tc:oTc,upDay:upDay,upDet:upDet,addDet:addDet,rmDet:rmDet})
+      )
+    ):null,
+
+    // SCAN IMPORT MODAL
+    showScan?h("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16,background:"rgba(0,0,0,0.85)",backdropFilter:"blur(12px)"},onClick:function(){setShowScan(false);setScanResult(null);setScanImg(null);}},
+      h("div",{onClick:function(e){e.stopPropagation()},style:{background:"#161b22",border:"1px solid #30363d",borderRadius:18,padding:24,width:"100%",maxWidth:480,maxHeight:"85vh",overflowY:"auto"}},
+        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
+          h("div",{style:{fontSize:16,fontWeight:700}},"📸 Import Booking"),
+          h("button",{onClick:function(){setShowScan(false);setScanResult(null);setScanImg(null);},style:{background:"transparent",border:"none",color:"#8b949e",cursor:"pointer",fontSize:18}},"✕")
+        ),
+        !scanImg?h("div",{
+          style:{border:"2px dashed #30363d",borderRadius:12,padding:32,textAlign:"center",cursor:"pointer",transition:"border-color .2s"},
+          onDragOver:function(e){e.preventDefault();e.currentTarget.style.borderColor="#4ecdc4"},
+          onDragLeave:function(e){e.currentTarget.style.borderColor="#30363d"},
+          onDrop:function(e){e.preventDefault();e.currentTarget.style.borderColor="#30363d";handleScanFile(e.dataTransfer.files[0]);},
+          onClick:function(){document.getElementById("scan-file-input").click();}
+        },
+          h("div",{style:{fontSize:36,marginBottom:8}},"📸"),
+          h("div",{style:{fontSize:14,color:"#8b949e",marginBottom:4}},"Drop a screenshot here"),
+          h("div",{style:{fontSize:12,color:"#484f58"}},"or tap to choose from camera roll"),
+          h("input",{id:"scan-file-input",type:"file",accept:"image/*",style:{display:"none"},onChange:function(e){handleScanFile(e.target.files[0]);}})
+        ):null,
+        scanImg&&scanning?h("div",{style:{textAlign:"center",padding:24}},
+          h("div",{style:{fontSize:32,marginBottom:12}},"🤖"),
+          h("div",{style:{fontSize:14,color:"#8b949e"}},"Scanning your booking...")
+        ):null,
+        scanImg&&!scanning&&scanResult&&!scanResult.error?h("div",null,
+          h("img",{src:scanImg,style:{width:"100%",borderRadius:10,marginBottom:16,maxHeight:200,objectFit:"cover"}}),
+          h("div",{style:{background:"#0d1117",borderRadius:10,padding:14,marginBottom:16,fontSize:13}},
+            h("div",{style:{fontWeight:700,fontSize:15,marginBottom:8}},scanResult.title||"Booking detected"),
+            scanResult.type?h("div",{style:{color:"#4ecdc4",fontSize:12,marginBottom:6,textTransform:"uppercase",letterSpacing:1}},scanResult.type):null,
+            scanResult.date?h("div",{style:{color:"#8b949e"}},"📅 "+scanResult.date+(scanResult.time?" · "+scanResult.time:"")):null,
+            scanResult.flightNumber?h("div",{style:{color:"#8b949e"}},"✈️ "+scanResult.flightNumber+(scanResult.airline?" · "+scanResult.airline:"")):null,
+            scanResult.from?h("div",{style:{color:"#8b949e"}},"🛫 "+scanResult.from+" → "+(scanResult.to||"?")):null,
+            scanResult.location?h("div",{style:{color:"#8b949e"}},"📍 "+scanResult.location):null,
+            scanResult.confirmation?h("div",{style:{color:"#8b949e"}},"Conf: "+scanResult.confirmation):null,
+            scanResult.notes?h("div",{style:{color:"#8b949e",marginTop:6}},scanResult.notes):null
+          ),
+          h("div",{style:{display:"flex",gap:8}},
+            h("button",{onClick:function(){applyScannedBooking(scanResult);},style:{flex:1,background:"#238636",border:"none",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,color:"#fff",cursor:"pointer"}},"Add to Trip"),
+            h("button",{onClick:function(){setScanResult(null);setScanImg(null);},style:{background:"transparent",border:"1px solid #30363d",borderRadius:10,padding:"12px",fontSize:14,color:"#8b949e",cursor:"pointer"}},"Rescan")
+          )
+        ):null,
+        scanImg&&!scanning&&scanResult&&scanResult.error?h("div",{style:{textAlign:"center",padding:16}},
+          h("div",{style:{color:"#ff6b6b",marginBottom:12}},scanResult.error),
+          h("button",{onClick:function(){setScanResult(null);setScanImg(null);},style:{background:"transparent",border:"1px solid #30363d",borderRadius:10,padding:"10px 20px",color:"#8b949e",cursor:"pointer"}},"Try again")
+        ):null
       )
     ):null,
 
@@ -533,7 +719,10 @@ function App(){
               )})
             ),
             // sync badge
-            h(SyncBadge,{status:syncStatus})
+            h("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}},
+              h(SyncBadge,{status:syncStatus}),
+              h("button",{onClick:function(){setShowScan(true);},style:{background:"rgba(78,205,196,0.12)",border:"1px solid rgba(78,205,196,0.3)",borderRadius:20,padding:"4px 12px",fontSize:11,fontWeight:700,color:"#4ecdc4",cursor:"pointer",letterSpacing:.5}},"📸 Scan booking")
+            )
           ),
           h(MiniCal,{activeDate:aDate,tripDates:tDates,onSelect:function(dateStr){var idx=dn2idx(dateStr);if(idx>=0){setOverlay(idx);setTab("itinerary")}}})
         )
@@ -572,11 +761,18 @@ function App(){
               },tc.badge+" ✏️")
               ),
               h("div",{style:{fontSize:15,fontWeight:600,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}},day.title),
-              h("div",{style:{fontSize:12,color:"#8b949e"}},day.date)
+              h("div",{style:{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
+                h("div",{style:{fontSize:12,color:"#8b949e"}},day.date),
+                weather[day.id]&&!weather[day.id].loading&&!weather[day.id].error?h("div",{style:{display:"flex",alignItems:"center",gap:3,fontSize:11,color:"#8b949e"}},
+                  h("span",null,weather[day.id].icon),
+                  h("span",null,weather[day.id].tmax+"\u00B0/"+weather[day.id].tmin+"\u00B0C"),
+                  weather[day.id].warning?h("span",{style:{color:"#ff6b6b",fontWeight:700},title:weather[day.id].warning},"\u26A0\uFE0F"):null
+                ):null
+              )
             ),
             h("div",{style:{fontSize:14,color:"#484f58",transform:isOpen?"rotate(180deg)":"none",transition:"transform .2s",flexShrink:0}},"\u25BC")
           ),
-          isOpen?h(DayContent,{day:day,i:i,tc:tc,upDay:upDay,upDet:upDet,addDet:addDet,rmDet:rmDet,moveDet:moveDet}):null
+          isOpen?h(DayContent,{day:day,i:i,tc:tc,upDay:upDay,upDet:upDet,addDet:addDet,rmDet:rmDet}):null
         );
       }):null,
 
