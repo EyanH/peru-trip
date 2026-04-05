@@ -287,15 +287,35 @@ function App(){
 
   // Fetch weather for all days (Open-Meteo, free, no key)
   // Location map: city name -> {lat, lon}
-  var CITY_COORDS={"lima":{"lat":-12.05,"lon":-77.04},"cusco":{"lat":-13.52,"lon":-71.97},"toronto":{"lat":43.65,"lon":-79.38},"bogota":{"lat":4.71,"lon":-74.07},"soraypampa":{"lat":-13.58,"lon":-72.12}};
-  function getCityCoords(location){
-    if(!location)return null;
-    var l=location.toLowerCase();
-    for(var city in CITY_COORDS){if(l.indexOf(city)>=0)return CITY_COORDS[city];}
+  var CITY_COORDS={
+    "lima":{"lat":-12.05,"lon":-77.04},
+    "miraflores":{"lat":-12.12,"lon":-77.03},
+    "barranco":{"lat":-12.15,"lon":-77.02},
+    "cusco":{"lat":-13.52,"lon":-71.97},
+    "cuz":{"lat":-13.52,"lon":-71.97},
+    "toronto":{"lat":43.65,"lon":-79.38},
+    "yyz":{"lat":43.68,"lon":-79.63},
+    "bogota":{"lat":4.71,"lon":-74.07},
+    "bogot":{"lat":4.71,"lon":-74.07},
+    "bog":{"lat":4.71,"lon":-74.07},
+    "soraypampa":{"lat":-13.58,"lon":-72.12},
+    "salkantay":{"lat":-13.53,"lon":-72.11},
+    "humantay":{"lat":-13.57,"lon":-72.15},
+    "machu picchu":{"lat":-13.16,"lon":-72.54},
+    "peru":{"lat":-12.05,"lon":-77.04}
+  };
+  function getCityCoords(title, location){
+    // Search both title and location fields
+    var combined=((title||"")+" "+(location||"")).toLowerCase();
+    // Try longest/most specific matches first
+    var cities=Object.keys(CITY_COORDS).sort(function(a,b){return b.length-a.length;});
+    for(var i=0;i<cities.length;i++){if(combined.indexOf(cities[i])>=0)return CITY_COORDS[cities[i]];}
+    // Travel days default to Lima (start location) if nothing found
+    if(combined.indexOf("travel")>=0||combined.indexOf("transit")>=0)return CITY_COORDS["lima"];
     return null;
   }
   function fetchWeather(dayObj){
-    var coords=getCityCoords(dayObj.location);
+    var coords=getCityCoords(dayObj.title, dayObj.location);
     if(!coords)return;
     var dateStr=dayObj.date; // e.g. "Sat, Apr 18"
     // Parse date to ISO for Open-Meteo
@@ -335,7 +355,7 @@ function App(){
   // Fetch weather once days load
   ue(function(){
     if(!loaded||!days.length)return;
-    days.forEach(function(day){if(getCityCoords(day.location))fetchWeather(day);});
+    days.forEach(function(day){fetchWeather(day);});
   },[loaded]);
 
   // Load from Firebase on mount
@@ -496,6 +516,20 @@ function App(){
 
 
   // ─── SCAN IMPORT MODAL ───────────────────────────────────────────────────
+  // Global paste handler when scan modal is open
+  ue(function(){
+    if(!showScan)return;
+    function onPaste(e){
+      var items=e.clipboardData&&e.clipboardData.items;
+      if(!items)return;
+      for(var i=0;i<items.length;i++){
+        if(items[i].type.startsWith("image/")){handleScanFile(items[i].getAsFile());break;}
+      }
+    }
+    document.addEventListener("paste",onPaste);
+    return function(){document.removeEventListener("paste",onPaste);};
+  },[showScan]);
+
   function handleScanFile(file){
     if(!file||!file.type.startsWith("image/"))return;
     var reader=new FileReader();
@@ -624,11 +658,12 @@ function App(){
           onDragOver:function(e){e.preventDefault();e.currentTarget.style.borderColor="#4ecdc4"},
           onDragLeave:function(e){e.currentTarget.style.borderColor="#30363d"},
           onDrop:function(e){e.preventDefault();e.currentTarget.style.borderColor="#30363d";handleScanFile(e.dataTransfer.files[0]);},
-          onClick:function(){document.getElementById("scan-file-input").click();}
+          onClick:function(){document.getElementById("scan-file-input").click();},
+          onPaste:function(e){var items=e.clipboardData&&e.clipboardData.items;if(!items)return;for(var i=0;i<items.length;i++){if(items[i].type.startsWith("image/")){handleScanFile(items[i].getAsFile());break;}}}
         },
           h("div",{style:{fontSize:36,marginBottom:8}},"📸"),
-          h("div",{style:{fontSize:14,color:"#8b949e",marginBottom:4}},"Drop a screenshot here"),
-          h("div",{style:{fontSize:12,color:"#484f58"}},"or tap to choose from camera roll"),
+          h("div",{style:{fontSize:14,color:"#8b949e",marginBottom:4}},"Drop, paste ⌘V, or tap to choose"),
+          h("div",{style:{fontSize:12,color:"#484f58"}},"Screenshots, photos, booking confirmations"),
           h("input",{id:"scan-file-input",type:"file",accept:"image/*",style:{display:"none"},onChange:function(e){handleScanFile(e.target.files[0]);}})
         ):null,
         scanImg&&scanning?h("div",{style:{textAlign:"center",padding:24}},
