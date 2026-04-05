@@ -280,11 +280,6 @@ function App(){
   // Weather state: {dayId: {temp, condition, icon, warning, loading}}
   var _wx=us({}),weather=_wx[0],setWeather=_wx[1];
   // Scan import state
-  var _scan=us(null),scanResult=_scan[0],setScanResult=_scan[1];
-  var _scanImg=us(null),scanImg=_scanImg[0],setScanImg=_scanImg[1];
-  var _scanning=us(false),scanning=_scanning[0],setScanning=_scanning[1];
-  var _showScan=us(false),showScan=_showScan[0],setShowScan=_showScan[1];
-
   // Fetch weather for all days (Open-Meteo, free, no key)
   // Location map: city name -> {lat, lon}
   var CITY_COORDS={
@@ -541,100 +536,8 @@ function App(){
 
 
   // ─── SCAN IMPORT MODAL ───────────────────────────────────────────────────
-  // Global paste handler when scan modal is open
-  ue(function(){
-    if(!showScan)return;
-    function onPaste(e){
-      var items=e.clipboardData&&e.clipboardData.items;
-      if(!items)return;
-      for(var i=0;i<items.length;i++){
-        if(items[i].type.startsWith("image/")){handleScanFile(items[i].getAsFile());break;}
-      }
-    }
-    document.addEventListener("paste",onPaste);
-    return function(){document.removeEventListener("paste",onPaste);};
-  },[showScan]);
 
-  function handleScanFile(file){
-    if(!file||!file.type.startsWith("image/"))return;
-    var reader=new FileReader();
-    reader.onload=function(e){
-      setScanImg(e.target.result);
-      setScanning(true);
-      setScanResult(null);
-      // Call Anthropic API with the image
-      var b64=e.target.result.split(",")[1];
-      var mediaType=file.type;
-      fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",
-        headers:{"Content-Type":"application/json","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-        body:JSON.stringify({
-          model:"claude-sonnet-4-20250514",
-          max_tokens:1000,
-          messages:[{role:"user",content:[
-            {type:"image",source:{type:"base64",media_type:mediaType,data:b64}},
-            {type:"text",text:"You are a travel booking parser. Extract booking info from this screenshot and return ONLY a raw JSON object — no markdown, no backticks, no explanation, just the JSON.\n\nUse this exact shape (include only fields you can find):\n{\n  \"type\": \"flight\" or \"hotel\" or \"activity\" or \"other\",\n  \"title\": \"short descriptive name\",\n  \"date\": \"Apr 18\" (Month DD format),\n  \"time\": \"8:55 AM\",\n  \"location\": \"city or venue name\",\n  \"flightNumber\": \"AV255\",\n  \"airline\": \"Avianca\",\n  \"from\": \"Toronto YYZ\",\n  \"to\": \"Bogota BOG\",\n  \"confirmation\": \"ABC123\",\n  \"notes\": \"any extra details\"\n}\n\nStart your response with { and end with }. Nothing else."}
-          ]}]
-        })
-      }).then(function(r){return r.json();}).then(function(data){
-        var text=data.content&&data.content[0]&&data.content[0].text;
-        try{
-          // Strip any markdown fences, leading/trailing text
-          var cleaned=text.replace(/```json|```/g,"").trim();
-          // Extract just the JSON object if there's surrounding text
-          var jsonMatch=cleaned.match(/\{[\s\S]*\}/);
-          if(jsonMatch)cleaned=jsonMatch[0];
-          var parsed=JSON.parse(cleaned);
-          if(!parsed.title&&!parsed.flightNumber)throw new Error("No booking data found");
-          setScanResult(parsed);
-        }catch(e){setScanResult({error:"Could not read booking details. Try a clearer screenshot."});}
-        setScanning(false);
-      }).catch(function(){setScanResult({error:"API error. Try again."});setScanning(false);});
-    };
-    reader.readAsDataURL(file);
-  }
 
-  function applyScannedBooking(result){
-    // Find matching day by date
-    var months={"Jan":1,"Feb":2,"Mar":3,"Apr":4,"May":5,"Jun":6,"Jul":7,"Aug":8,"Sep":9,"Oct":10,"Nov":11,"Dec":12};
-    function parseDate(str){if(!str)return null;var p=str.split(" ");return p.length===2?{mo:months[p[0]],dy:parseInt(p[1])}:null;}
-    var target=parseDate(result.date);
-    var dayIdx=-1;
-    if(target){
-      dayIdx=days.findIndex(function(d){
-        var p=d.date.replace(/^[A-Za-z]+,\s*/,"").split(" ");
-        return p.length===2&&months[p[0]]===target.mo&&parseInt(p[1])===target.dy;
-      });
-    }
-    // Check duplicate
-    if(dayIdx>=0&&result.title){
-      var existing=days[dayIdx].details.find(function(det){
-        return det.text&&det.text.toLowerCase().indexOf(result.title.toLowerCase())>=0;
-      });
-      if(existing){
-        alert("\uD83D\uDD04 Duplicate detected: \""+result.title+"\" already exists on this day.");
-        return;
-      }
-    }
-    if(result.type==="flight"&&result.flightNumber){
-      // Add to flights tab
-      var newFlight={
-        route:(result.from||"?")+"→"+(result.to||"?"),
-        date:result.date||"",
-        flights:result.flightNumber+(result.airline?" ("+result.airline+")":""),
-        fare:result.confirmation?"Conf: "+result.confirmation:""
-      };
-      var isDupeFlight=flights.some(function(f){return f.flights&&f.flights.indexOf(result.flightNumber)>=0;});
-      if(isDupeFlight){alert("\uD83D\uDD04 Flight "+result.flightNumber+" already in your Flights tab.");return;}
-      setFlights(function(f){var n=f.concat([newFlight]);scheduleSync(undefined,undefined,undefined,undefined,n);return n;});
-    }
-    if(dayIdx>=0){
-      var det={time:result.time||"",text:result.title||(result.type||"Booking"),sub:result.notes||result.confirmation||""};
-      setDays(function(d){var n=d.slice();n[dayIdx]=Object.assign({},n[dayIdx],{details:n[dayIdx].details.concat([det])});if(result.type==="hotel"&&result.title)n[dayIdx]=Object.assign({},n[dayIdx],{accommodation:result.title});scheduleSync(n);return n;});
-    }
-    alert("\u2705 Added to your itinerary!"+(result.type==="flight"?" Check the Flights tab too.":""));
-    setShowScan(false);setScanResult(null);setScanImg(null);
-  }
 
   return h("div",{style:{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center"}},
 
@@ -677,56 +580,9 @@ function App(){
       )
     ):null,
 
-    // SCAN IMPORT MODAL
-    showScan?h("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16,background:"rgba(0,0,0,0.85)",backdropFilter:"blur(12px)"},onClick:function(){setShowScan(false);setScanResult(null);setScanImg(null);}},
-      h("div",{onClick:function(e){e.stopPropagation()},style:{background:"#161b22",border:"1px solid #30363d",borderRadius:18,padding:24,width:"100%",maxWidth:480,maxHeight:"85vh",overflowY:"auto"}},
-        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
-          h("div",{style:{fontSize:16,fontWeight:700}},"📸 Import Booking"),
-          h("button",{onClick:function(){setShowScan(false);setScanResult(null);setScanImg(null);},style:{background:"transparent",border:"none",color:"#8b949e",cursor:"pointer",fontSize:18}},"✕")
-        ),
-        !scanImg?h("div",{
-          style:{border:"2px dashed #30363d",borderRadius:12,padding:32,textAlign:"center",cursor:"pointer",transition:"border-color .2s"},
-          onDragOver:function(e){e.preventDefault();e.currentTarget.style.borderColor="#4ecdc4"},
-          onDragLeave:function(e){e.currentTarget.style.borderColor="#30363d"},
-          onDrop:function(e){e.preventDefault();e.currentTarget.style.borderColor="#30363d";handleScanFile(e.dataTransfer.files[0]);},
-          onClick:function(){document.getElementById("scan-file-input").click();},
-          onPaste:function(e){var items=e.clipboardData&&e.clipboardData.items;if(!items)return;for(var i=0;i<items.length;i++){if(items[i].type.startsWith("image/")){handleScanFile(items[i].getAsFile());break;}}}
-        },
-          h("div",{style:{fontSize:36,marginBottom:8}},"📸"),
-          h("div",{style:{fontSize:14,color:"#8b949e",marginBottom:4}},"Drop, paste ⌘V, or tap to choose"),
-          h("div",{style:{fontSize:12,color:"#484f58"}},"Screenshots, photos, booking confirmations"),
-          h("input",{id:"scan-file-input",type:"file",accept:"image/*",style:{display:"none"},onChange:function(e){handleScanFile(e.target.files[0]);}})
-        ):null,
-        scanImg&&scanning?h("div",{style:{textAlign:"center",padding:24}},
-          h("div",{style:{fontSize:32,marginBottom:12}},"🤖"),
-          h("div",{style:{fontSize:14,color:"#8b949e"}},"Scanning your booking...")
-        ):null,
-        scanImg&&!scanning&&scanResult&&!scanResult.error?h("div",null,
-          h("img",{src:scanImg,style:{width:"100%",borderRadius:10,marginBottom:16,maxHeight:200,objectFit:"cover"}}),
-          h("div",{style:{background:"#0d1117",borderRadius:10,padding:14,marginBottom:16,fontSize:13}},
-            h("div",{style:{fontWeight:700,fontSize:15,marginBottom:8}},scanResult.title||"Booking detected"),
-            scanResult.type?h("div",{style:{color:"#4ecdc4",fontSize:12,marginBottom:6,textTransform:"uppercase",letterSpacing:1}},scanResult.type):null,
-            scanResult.date?h("div",{style:{color:"#8b949e"}},"📅 "+scanResult.date+(scanResult.time?" · "+scanResult.time:"")):null,
-            scanResult.flightNumber?h("div",{style:{color:"#8b949e"}},"✈️ "+scanResult.flightNumber+(scanResult.airline?" · "+scanResult.airline:"")):null,
-            scanResult.from?h("div",{style:{color:"#8b949e"}},"🛫 "+scanResult.from+" → "+(scanResult.to||"?")):null,
-            scanResult.location?h("div",{style:{color:"#8b949e"}},"📍 "+scanResult.location):null,
-            scanResult.confirmation?h("div",{style:{color:"#8b949e"}},"Conf: "+scanResult.confirmation):null,
-            scanResult.notes?h("div",{style:{color:"#8b949e",marginTop:6}},scanResult.notes):null
-          ),
-          h("div",{style:{display:"flex",gap:8}},
-            h("button",{onClick:function(){applyScannedBooking(scanResult);},style:{flex:1,background:"#238636",border:"none",borderRadius:10,padding:"12px",fontSize:14,fontWeight:700,color:"#fff",cursor:"pointer"}},"Add to Trip"),
-            h("button",{onClick:function(){setScanResult(null);setScanImg(null);},style:{background:"transparent",border:"1px solid #30363d",borderRadius:10,padding:"12px",fontSize:14,color:"#8b949e",cursor:"pointer"}},"Rescan")
-          )
-        ):null,
-        scanImg&&!scanning&&scanResult&&scanResult.error?h("div",{style:{textAlign:"center",padding:16}},
-          h("div",{style:{color:"#ff6b6b",marginBottom:12}},scanResult.error),
-          h("button",{onClick:function(){setScanResult(null);setScanImg(null);},style:{background:"transparent",border:"1px solid #30363d",borderRadius:10,padding:"10px 20px",color:"#8b949e",cursor:"pointer"}},"Try again")
-        ):null
-      )
-    ):null,
 
     // HEADER
-    h("div",{style:{width:"100%",background:"linear-gradient(135deg,#0f2027,#203a43 50%,#2c5364)",padding:(mobile?24:36)+"px "+pd+"px "+(mobile?20:28)+"px",display:"flex",justifyContent:"center",position:"relative",overflow:"hidden"}},
+    h("div",{style:{width:"100%",background:"linear-gradient(135deg,#0f2027,#203a43 50%,#2c5364)",padding:"calc("+(mobile?24:36)+"px + env(safe-area-inset-top, 0px)) "+pd+"px "+(mobile?20:28)+"px",display:"flex",justifyContent:"center",position:"relative",overflow:"hidden"}},
       h("div",{style:{maxWidth:mw,width:"100%"}},
         h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16}},
           h("div",{style:{flex:1,minWidth:0}},
@@ -785,10 +641,7 @@ function App(){
               )})
             ),
             // sync badge
-            h("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}},
-              h(SyncBadge,{status:syncStatus}),
-              h("button",{onClick:function(){setShowScan(true);},style:{background:"rgba(78,205,196,0.12)",border:"1px solid rgba(78,205,196,0.3)",borderRadius:20,padding:"4px 12px",fontSize:11,fontWeight:700,color:"#4ecdc4",cursor:"pointer",letterSpacing:.5}},"📸 Scan booking")
-            )
+h(SyncBadge,{status:syncStatus})
           ),
           h(MiniCal,{activeDate:aDate,tripDates:tDates,onSelect:function(dateStr){var idx=dn2idx(dateStr);if(idx>=0){setOverlay(idx);setTab("itinerary")}}})
         )
