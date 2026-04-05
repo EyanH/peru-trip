@@ -573,15 +573,21 @@ function App(){
           max_tokens:1000,
           messages:[{role:"user",content:[
             {type:"image",source:{type:"base64",media_type:mediaType,data:b64}},
-            {type:"text",text:"Extract all booking/travel info from this screenshot. Return ONLY valid JSON with this shape (omit fields you cannot find):\n{\"type\":\"flight|hotel|activity|other\",\"title\":\"string\",\"date\":\"Month DD e.g. Apr 18\",\"time\":\"HH:MM AM/PM\",\"endTime\":\"HH:MM AM/PM\",\"location\":\"string\",\"flightNumber\":\"string\",\"airline\":\"string\",\"confirmation\":\"string\",\"from\":\"string\",\"to\":\"string\",\"notes\":\"string\"}\nReturn ONLY the JSON object, no markdown."}
+            {type:"text",text:"You are a travel booking parser. Extract booking info from this screenshot and return ONLY a raw JSON object — no markdown, no backticks, no explanation, just the JSON.\n\nUse this exact shape (include only fields you can find):\n{\n  \"type\": \"flight\" or \"hotel\" or \"activity\" or \"other\",\n  \"title\": \"short descriptive name\",\n  \"date\": \"Apr 18\" (Month DD format),\n  \"time\": \"8:55 AM\",\n  \"location\": \"city or venue name\",\n  \"flightNumber\": \"AV255\",\n  \"airline\": \"Avianca\",\n  \"from\": \"Toronto YYZ\",\n  \"to\": \"Bogota BOG\",\n  \"confirmation\": \"ABC123\",\n  \"notes\": \"any extra details\"\n}\n\nStart your response with { and end with }. Nothing else."}
           ]}]
         })
       }).then(function(r){return r.json();}).then(function(data){
         var text=data.content&&data.content[0]&&data.content[0].text;
         try{
-          var parsed=JSON.parse(text.replace(/```json|```/g,"").trim());
+          // Strip any markdown fences, leading/trailing text
+          var cleaned=text.replace(/```json|```/g,"").trim();
+          // Extract just the JSON object if there's surrounding text
+          var jsonMatch=cleaned.match(/\{[\s\S]*\}/);
+          if(jsonMatch)cleaned=jsonMatch[0];
+          var parsed=JSON.parse(cleaned);
+          if(!parsed.title&&!parsed.flightNumber)throw new Error("No booking data found");
           setScanResult(parsed);
-        }catch(e){setScanResult({error:"Could not parse booking info from this image."});}
+        }catch(e){setScanResult({error:"Could not read booking details. Try a clearer screenshot."});}
         setScanning(false);
       }).catch(function(){setScanResult({error:"API error. Try again."});setScanning(false);});
     };
