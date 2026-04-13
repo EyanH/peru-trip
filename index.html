@@ -1085,31 +1085,50 @@ h(SyncBadge,{status:syncStatus})
                   h("div",{style:{marginBottom:4}},
                     q.dist&&q.dist.resolvedAddr?h("div",{style:{fontSize:11,color:"#8b949e",fontStyle:"italic",marginBottom:2}},"\uD83D\uDCCD "+q.dist.resolvedAddr):null,
                     manualAddrMap[q.id]!==undefined?
-                      h("div",{style:{display:"flex",gap:6,alignItems:"center",marginTop:4}},
+                      h("div",{style:{marginTop:6}},
+                        h("div",{style:{fontSize:10,color:"#8b949e",marginBottom:4}},"Paste a Google Maps URL or address:"),
+                        h("div",{style:{display:"flex",gap:6,alignItems:"center"}},
                         h("input",{
                           value:manualAddrMap[q.id],
                           onChange:function(e){var v=e.target.value;setManualAddrMap(function(m){return Object.assign({},m,{[q.id]:v})});},
                           onKeyDown:function(e){
-                            if(e.key==="Enter"&&manualAddrMap[q.id].trim()){geocodeManual(q,manualAddrMap[q.id]);setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});}
+                            if(e.key==="Enter"&&manualAddrMap[q.id].trim()){
+                              var coords=parseMapsUrl(manualAddrMap[q.id]);
+                              if(coords){
+                                setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:{lat:coords.lat,lon:coords.lon,resolvedAddr:null},distLoading:false}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
+                                setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});
+                              } else {
+                                geocodeManual(q,manualAddrMap[q.id]);
+                                setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});
+                              }
+                            }
                             if(e.key==="Escape"){setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});}
                           },
-                          placeholder:"Paste address or street, e.g. Av. La Mar 770, Miraflores",
+                          placeholder:"Maps URL or address, e.g. Av. La Mar 770, Miraflores",
                           autoFocus:true,
-                          style:{flex:1,background:"#0d1117",border:"1px solid #4ecdc4",borderRadius:6,padding:"5px 8px",fontSize:11,color:"#e6edf3",outline:"none"}
+                          style:{flex:1,background:"#0d1117",border:"1px solid "+(manualAddrMap[q.id]&&parseMapsUrl(manualAddrMap[q.id])?"rgba(78,205,196,0.4)":"#4ecdc4"),borderRadius:6,padding:"5px 8px",fontSize:11,color:"#e6edf3",outline:"none"}
                         }),
                         h("button",{
                           onClick:function(){
                             if(manualAddrMap[q.id]&&manualAddrMap[q.id].trim()){
-                              geocodeManual(q,manualAddrMap[q.id]);
-                              setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});
+                              var coords=parseMapsUrl(manualAddrMap[q.id]);
+                              if(coords){
+                                setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:{lat:coords.lat,lon:coords.lon,resolvedAddr:null},distLoading:false}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
+                                setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});
+                              } else {
+                                geocodeManual(q,manualAddrMap[q.id]);
+                                setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});
+                              }
                             }
                           },
                           style:{background:"#238636",border:"none",borderRadius:6,padding:"5px 10px",fontSize:11,color:"#fff",cursor:"pointer",fontWeight:700,whiteSpace:"nowrap"}
-                        },"Go"),
+                        },manualAddrMap[q.id]&&parseMapsUrl(manualAddrMap[q.id])?"📍 Pin it":"Go"),
                         h("button",{
                           onClick:function(){setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n})},
                           style:{background:"transparent",border:"1px solid #30363d",borderRadius:6,padding:"5px 8px",fontSize:11,color:"#8b949e",cursor:"pointer"}
                         },"\u2715")
+                        ),
+                        manualAddrMap[q.id]&&parseMapsUrl(manualAddrMap[q.id])?h("div",{style:{fontSize:10,color:"#4ecdc4",marginTop:3}},"\u2713 Maps URL detected \u2014 will pin exact location"):null
                       ):null
                   ),
                   // Notes
@@ -1127,7 +1146,7 @@ h(SyncBadge,{status:syncStatus})
                       h("span",{style:{fontSize:11,color:"#484f58"}},"Distance unavailable"):
                       h("span",{style:{fontSize:11,color:"#4ecdc4",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
                         q.dist.lat?h("a",{
-                          href:"https://www.google.com/maps/search/?api=1&query="+q.dist.lat+","+q.dist.lon,
+                          href:"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q.name)+"%20Lima%20Peru",
                           target:"_blank",
                           style:{fontSize:12,color:"#4ecdc4",textDecoration:"none",background:"rgba(78,205,196,0.12)",border:"1px solid rgba(78,205,196,0.3)",borderRadius:8,padding:"4px 10px",fontWeight:600}
                         },"\uD83D\uDDFA\uFE0F View on Maps"):null,
