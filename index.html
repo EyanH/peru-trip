@@ -1220,7 +1220,16 @@ h(SyncBadge,{status:syncStatus})
                       ):null
                   ),
                   // Notes
-                  q.notes?h("div",{style:{fontSize:12,color:"#8b949e",marginBottom:6}},q.notes):null,
+                  h("div",{style:{fontSize:12,color:q.notes?"#8b949e":"#484f58",marginBottom:6}},
+                    h(Editable,{
+                      value:q.notes||"",
+                      onChange:function(v){
+                        setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{notes:v}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n});
+                      },
+                      style:{fontSize:12,color:q.notes?"#8b949e":"#484f58"},
+                      placeholder:"Add notes..."
+                    })
+                  ),
                   // Distance row
                   h("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}},
                     h("span",{style:{fontSize:11,color:"#484f58"}},q.city==="cusco"?"\uD83C\uDFD4\uFE0F Cusco":"\uD83C\uDF0A Lima"),
