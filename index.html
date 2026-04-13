@@ -564,6 +564,21 @@ function App(){
       entry.dist={lat:coordsFromUrl.lat,lon:coordsFromUrl.lon,resolvedAddr:null};
       entry.distLoading=false;
       setQuests(function(prev){var n=prev.concat([entry]);scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n});
+      // Reverse geocode to get a readable address
+      fetch("https://nominatim.openstreetmap.org/reverse?lat="+coordsFromUrl.lat+"&lon="+coordsFromUrl.lon+"&format=json&addressdetails=1")
+        .then(function(r){return r.json();})
+        .then(function(res){
+          var addr=res.address||{};
+          var parts=[];
+          if(addr.road)parts.push(addr.road);
+          if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
+          var shortAddr=parts.length?parts.join(", "):(res.display_name||"").split(",").slice(0,2).join(",").trim();
+          setQuests(function(prev){
+            var n=prev.map(function(x){return x.id===entry.id?Object.assign({},x,{dist:Object.assign({},x.dist,{resolvedAddr:shortAddr})}):x});
+            scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);
+            return n;
+          });
+        }).catch(function(){});
     } else {
       setQuests(function(prev){var n=prev.concat([entry]);scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n});
       geocodeQuest(entry);
@@ -595,29 +610,46 @@ function App(){
     return null;
   }
 
+  function stripAccents(s){
+    return s.normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  }
+
   function geocodeQuest(entry){
     var hotel=HOTEL_COORDS[entry.city]||HOTEL_COORDS.lima;
     var cityStr=entry.city==="cusco"?"Cusco":"Lima";
-    // Append category hint to search to bias toward venues not streets
     var catHint={restaurant:"restaurant",food:"cafe",sight:"",activity:""};
     var hint=catHint[entry.cat]||"";
+    // Try both original and accent-stripped names
     var searchName=hint?entry.name+" "+hint:entry.name;
-    // Step 1: Bounded search within city district
-    var structUrl="https://nominatim.openstreetmap.org/search"
-      +"?q="+encodeURIComponent(searchName)
-      +"&format=json&limit=10&addressdetails=1&countrycodes=pe"
-      +"&viewbox="+encodeURIComponent(
-          entry.city==="cusco"?"-72.05,-13.45,-71.90,-13.60":"-77.15,-12.05,-76.95,-12.20"
-        )
-      +"&bounded=1";
-    fetch(structUrl)
-      .then(function(r){return r.json();})
-      .then(function(results){
-        var venues=(results||[]).filter(function(r){
-          return r.class==="amenity"||r.class==="tourism"||r.class==="leisure"||r.class==="shop";
+    var searchNameClean=stripAccents(searchName);
+
+    function trySearch(name,fallback){
+      var structUrl="https://nominatim.openstreetmap.org/search"
+        +"?q="+encodeURIComponent(name)
+        +"&format=json&limit=10&addressdetails=1&countrycodes=pe"
+        +"&viewbox="+encodeURIComponent(
+            entry.city==="cusco"?"-72.05,-13.45,-71.90,-13.60":"-77.15,-12.05,-76.95,-12.20"
+          )
+        +"&bounded=1";
+      return fetch(structUrl)
+        .then(function(r){return r.json();})
+        .then(function(results){
+          var venues=(results||[]).filter(function(r){
+            return r.class==="amenity"||r.class==="tourism"||r.class==="leisure"||r.class==="shop";
+          });
+          if(venues.length){pickBestNominatim(entry,hotel,venues);return true;}
+          return false;
         });
-        if(venues.length){pickBestNominatim(entry,hotel,venues);return;}
-        // Step 2: Broader search with city name appended
+    }
+
+    // Step 1: bounded search with original name
+    trySearch(searchName).then(function(found){
+      if(found)return;
+      // Step 2: try accent-stripped if different
+      var p=(searchNameClean!==searchName)?trySearch(searchNameClean):Promise.resolve(false);
+      p.then(function(found2){
+        if(found2)return;
+        // Step 3: broader unbounded search
         var broadUrl="https://nominatim.openstreetmap.org/search"
           +"?q="+encodeURIComponent(searchName+", "+cityStr+", Peru")
           +"&format=json&limit=10&addressdetails=1&countrycodes=pe";
@@ -628,21 +660,38 @@ function App(){
               return r.class==="amenity"||r.class==="tourism"||r.class==="leisure"||r.class==="shop";
             });
             if(r2.length){resolveNominatim(entry,hotel,r2);return;}
-            // Step 3: Last resort — original name only, no hint, broader search
-            if(hint){
-              return fetch("https://nominatim.openstreetmap.org/search?q="+encodeURIComponent(entry.name+", "+cityStr+", Peru")+"&format=json&limit=5&addressdetails=1&countrycodes=pe")
-                .then(function(r){return r.json();})
-                .then(function(res3){
-                  var r3=(res3||[]).filter(function(r){return r.class==="amenity"||r.class==="tourism"||r.class==="leisure";});
-                  var best=r3.length?r3[0]:(res3&&res3.length?res3[0]:null);
-                  if(!best){updateQuestDist(entry.id,{notFound:true});return;}
-                  resolveNominatim(entry,hotel,[best]);
+            // Step 4: accent-stripped broader search
+            return fetch("https://nominatim.openstreetmap.org/search"
+              +"?q="+encodeURIComponent(stripAccents(entry.name)+", "+cityStr+", Peru")
+              +"&format=json&limit=10&addressdetails=1&countrycodes=pe")
+              .then(function(r){return r.json();})
+              .then(function(res3){
+                var r3=(res3||[]).filter(function(r){
+                  return r.class==="amenity"||r.class==="tourism"||r.class==="leisure"||r.class==="shop";
                 });
-            }
-            if(!r2.length&&res2&&res2.length){resolveNominatim(entry,hotel,res2);return;}
-            updateQuestDist(entry.id,{notFound:true});
+                if(r3.length){resolveNominatim(entry,hotel,r3);return;}
+                // Step 5: first word(s) only as last resort
+                var words=entry.name.trim().split(/\s+/);
+                if(words.length>2){
+                  var shortName=words.slice(0,2).join(" ");
+                  return fetch("https://nominatim.openstreetmap.org/search"
+                    +"?q="+encodeURIComponent(shortName+" "+hint+", "+cityStr+", Peru")
+                    +"&format=json&limit=5&addressdetails=1&countrycodes=pe")
+                    .then(function(r){return r.json();})
+                    .then(function(res4){
+                      var r4=(res4||[]).filter(function(r){
+                        return r.class==="amenity"||r.class==="tourism"||r.class==="leisure"||r.class==="shop";
+                      });
+                      var best=r4.length?r4[0]:(res4&&res4.length?res4[0]:null);
+                      if(!best){updateQuestDist(entry.id,{notFound:true});return;}
+                      resolveNominatim(entry,hotel,[best]);
+                    });
+                }
+                updateQuestDist(entry.id,{notFound:true});
+              });
           });
-      }).catch(function(){updateQuestDist(entry.id,{error:true});});
+      });
+    }).catch(function(){updateQuestDist(entry.id,{error:true});});
   }
 
   function pickBestNominatim(entry,hotel,results){
@@ -710,6 +759,8 @@ function App(){
         if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
         var shortAddr=parts.length?parts.join(", "):(results[0].display_name||"").split(",").slice(0,2).join(",").trim();
         routeFromCoords(entry,hotel,lat,lon,shortAddr);
+        // Close the panel only on success
+        setManualAddrMap(function(m){var n=Object.assign({},m);delete n[entry.id];return n});
       }).catch(function(){updateQuestDist(entry.id,{error:true});});
   }
 
@@ -1095,11 +1146,21 @@ h(SyncBadge,{status:syncStatus})
                             if(e.key==="Enter"&&manualAddrMap[q.id].trim()){
                               var coords=parseMapsUrl(manualAddrMap[q.id]);
                               if(coords){
-                                setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:{lat:coords.lat,lon:coords.lon,resolvedAddr:null},distLoading:false}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
+                                var newDist={lat:coords.lat,lon:coords.lon,resolvedAddr:null};
+                                setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:newDist,distLoading:false}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
                                 setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});
+                                fetch("https://nominatim.openstreetmap.org/reverse?lat="+coords.lat+"&lon="+coords.lon+"&format=json&addressdetails=1")
+                                  .then(function(r){return r.json();})
+                                  .then(function(res){
+                                    var addr=res.address||{};var parts=[];
+                                    if(addr.road)parts.push(addr.road);
+                                    if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
+                                    var shortAddr=parts.length?parts.join(", "):(res.display_name||"").split(",").slice(0,2).join(",").trim();
+                                    setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:Object.assign({},x.dist,{resolvedAddr:shortAddr})}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
+                                  }).catch(function(){});
                               } else {
                                 geocodeManual(q,manualAddrMap[q.id]);
-                                setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});
+                                // Don't close — let result come back first
                               }
                             }
                             if(e.key==="Escape"){setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});}
@@ -1113,11 +1174,23 @@ h(SyncBadge,{status:syncStatus})
                             if(manualAddrMap[q.id]&&manualAddrMap[q.id].trim()){
                               var coords=parseMapsUrl(manualAddrMap[q.id]);
                               if(coords){
-                                setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:{lat:coords.lat,lon:coords.lon,resolvedAddr:null},distLoading:false}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
+                                var newDist={lat:coords.lat,lon:coords.lon,resolvedAddr:null};
+                                setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:newDist,distLoading:false}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
                                 setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});
+                                // Reverse geocode for address
+                                fetch("https://nominatim.openstreetmap.org/reverse?lat="+coords.lat+"&lon="+coords.lon+"&format=json&addressdetails=1")
+                                  .then(function(r){return r.json();})
+                                  .then(function(res){
+                                    var addr=res.address||{};
+                                    var parts=[];
+                                    if(addr.road)parts.push(addr.road);
+                                    if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
+                                    var shortAddr=parts.length?parts.join(", "):(res.display_name||"").split(",").slice(0,2).join(",").trim();
+                                    setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:Object.assign({},x.dist,{resolvedAddr:shortAddr})}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
+                                  }).catch(function(){});
                               } else {
                                 geocodeManual(q,manualAddrMap[q.id]);
-                                setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});
+                                // Keep field open — geocodeManual will update dist; if notFound the field stays
                               }
                             }
                           },
@@ -1139,14 +1212,15 @@ h(SyncBadge,{status:syncStatus})
                     h("span",{style:{color:"#21262d"}},"\u00B7"),
                     q.dist?(q.dist.notFound?
                       h("span",{style:{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
-                        h("span",{style:{fontSize:11,color:"#ff6b6b",fontWeight:600}},"\u26A0\uFE0F Place not found \u2014 check spelling"),
-                        h("button",{onClick:function(){updateQuestDist(q.id,null);geocodeQuest(q);},style:{fontSize:10,background:"rgba(255,107,107,0.12)",border:"1px solid rgba(255,107,107,0.3)",borderRadius:6,padding:"2px 7px",color:"#ff6b6b",cursor:"pointer"}},"Retry")
+                        h("span",{style:{fontSize:11,color:"#ff6b6b",fontWeight:600}},"\u26A0\uFE0F Place not found \u2014 try a Maps URL below"),
+                        h("button",{onClick:function(){updateQuestDist(q.id,null);geocodeQuest(q);},style:{fontSize:10,background:"rgba(255,107,107,0.12)",border:"1px solid rgba(255,107,107,0.3)",borderRadius:6,padding:"2px 7px",color:"#ff6b6b",cursor:"pointer"}},"Retry"),
+                        h("button",{onClick:function(){setManualAddrMap(function(m){var n=Object.assign({},m);n[q.id]="";return n;})},style:{fontSize:10,background:"transparent",border:"none",color:"#4ecdc4",cursor:"pointer",textDecoration:"underline"}},"Paste URL")
                       ):
                       q.dist.error?
                       h("span",{style:{fontSize:11,color:"#484f58"}},"Distance unavailable"):
                       h("span",{style:{fontSize:11,color:"#4ecdc4",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
                         q.dist.lat?h("a",{
-                          href:"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q.name)+"%20Lima%20Peru",
+                          href:"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q.name+", "+(q.city==="cusco"?"Cusco":"Lima")+", Peru"),
                           target:"_blank",
                           style:{fontSize:12,color:"#4ecdc4",textDecoration:"none",background:"rgba(78,205,196,0.12)",border:"1px solid rgba(78,205,196,0.3)",borderRadius:8,padding:"4px 10px",fontWeight:600}
                         },"\uD83D\uDDFA\uFE0F View on Maps"):null,
