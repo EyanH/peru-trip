@@ -1172,9 +1172,7 @@ h(SyncBadge,{status:syncStatus})
                                     if(addr.road)parts.push(addr.road);
                                     if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
                                     var shortAddr=parts.length?parts.join(", "):(res.display_name||"").split(",").slice(0,2).join(",").trim();
-                                    var placeName=(res.display_name||"").split(",")[0].trim();
-                                    var newName=placeName?placeName.replace(/\b\w/g,function(c){return c.toUpperCase();}):null;
-                                    setQuests(function(prev){var n=prev.map(function(x){if(x.id!==q.id)return x;var upd=Object.assign({},x,{dist:Object.assign({},x.dist,{resolvedAddr:shortAddr})});if(newName)upd.name=newName;return upd;});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
+                                    setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:Object.assign({},x.dist,{resolvedAddr:shortAddr})}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
                                   }).catch(function(){});
                               } else {
                                 geocodeManual(q,manualAddrMap[q.id]);
@@ -1205,9 +1203,7 @@ h(SyncBadge,{status:syncStatus})
                                     if(addr.road)parts.push(addr.road);
                                     if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
                                     var shortAddr=parts.length?parts.join(", "):(res.display_name||"").split(",").slice(0,2).join(",").trim();
-                                    var placeName=(res.display_name||"").split(",")[0].trim();
-                                    var newName=placeName?placeName.replace(/\b\w/g,function(c){return c.toUpperCase();}):null;
-                                    setQuests(function(prev){var n=prev.map(function(x){if(x.id!==q.id)return x;var upd=Object.assign({},x,{dist:Object.assign({},x.dist,{resolvedAddr:shortAddr})});if(newName)upd.name=newName;return upd;});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
+                                    setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:Object.assign({},x.dist,{resolvedAddr:shortAddr})}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
                                   }).catch(function(){});
                               } else {
                                 geocodeManual(q,manualAddrMap[q.id]);
