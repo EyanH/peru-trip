@@ -649,18 +649,21 @@ function App(){
     routeFromCoords(entry,hotel,lat,lon,shortAddr,venueName);
   }
   function routeFromCoords(entry,hotel,lat,lon,resolvedAddr,resolvedName){
+    // Title-case the entry name as fallback formatting
+    var titleCased=entry.name.replace(/\b\w/g,function(c){return c.toUpperCase();});
+    var finalName=resolvedName||titleCased;
     setQuests(function(prev){
-      return prev.map(function(q){
+      var n=prev.map(function(q){
         if(q.id!==entry.id)return q;
-        var updated=Object.assign({},q,{
+        return Object.assign({},q,{
+          name:finalName,
           dist:{lat:lat,lon:lon,resolvedAddr:resolvedAddr||null},
           distLoading:false
         });
-        if(resolvedName){
-          updated.name=resolvedName;
-        }
-        return updated;
       });
+      // Save to Firebase with updated name
+      scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);
+      return n;
     });
   }
 
