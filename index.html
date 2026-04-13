@@ -569,7 +569,7 @@ function App(){
         .then(function(res){
           var addr=res.address||{};
           var parts=[];
-          if(addr.road)parts.push(addr.road);
+          var houseNum=addr.house_number||"";if(addr.road)parts.push(houseNum?(addr.road+" "+houseNum):addr.road);
           if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
           var shortAddr=parts.length?parts.join(", "):(res.display_name||"").split(",").slice(0,2).join(",").trim();
           var placeName=(res.display_name||"").split(",")[0].trim();
@@ -729,7 +729,7 @@ function App(){
     var lat=parseFloat(best.lat),lon=parseFloat(best.lon);
     var addr=best.address||{};
     var parts=[];
-    if(addr.road)parts.push(addr.road);
+    var houseNum=addr.house_number||"";if(addr.road)parts.push(houseNum?(addr.road+" "+houseNum):addr.road);
     if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
     var shortAddr=parts.length?parts.join(", "):(best.display_name||"").split(",").slice(0,2).join(",").trim();
     // Always use the display_name first segment as the venue name when it's an amenity
@@ -770,7 +770,7 @@ function App(){
         var lat=parseFloat(results[0].lat),lon=parseFloat(results[0].lon);
         var addr=results[0].address||{};
         var parts=[];
-        if(addr.road)parts.push(addr.road);
+        var houseNum=addr.house_number||"";if(addr.road)parts.push(houseNum?(addr.road+" "+houseNum):addr.road);
         if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
         var shortAddr=parts.length?parts.join(", "):(results[0].display_name||"").split(",").slice(0,2).join(",").trim();
         routeFromCoords(entry,hotel,lat,lon,shortAddr);
@@ -1169,7 +1169,7 @@ h(SyncBadge,{status:syncStatus})
                                   .then(function(r){return r.json();})
                                   .then(function(res){
                                     var addr=res.address||{};var parts=[];
-                                    if(addr.road)parts.push(addr.road);
+                                    var houseNum=addr.house_number||"";if(addr.road)parts.push(houseNum?(addr.road+" "+houseNum):addr.road);
                                     if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
                                     var shortAddr=parts.length?parts.join(", "):(res.display_name||"").split(",").slice(0,2).join(",").trim();
                                     setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:Object.assign({},x.dist,{resolvedAddr:shortAddr})}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
@@ -1200,7 +1200,7 @@ h(SyncBadge,{status:syncStatus})
                                   .then(function(res){
                                     var addr=res.address||{};
                                     var parts=[];
-                                    if(addr.road)parts.push(addr.road);
+                                    var houseNum=addr.house_number||"";if(addr.road)parts.push(houseNum?(addr.road+" "+houseNum):addr.road);
                                     if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
                                     var shortAddr=parts.length?parts.join(", "):(res.display_name||"").split(",").slice(0,2).join(",").trim();
                                     setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:Object.assign({},x.dist,{resolvedAddr:shortAddr})}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
