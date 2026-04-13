@@ -568,24 +568,30 @@ function App(){
   // Geocode + OSRM routing for a quest entry
   function geocodeQuest(entry){
     var hotel=HOTEL_COORDS[entry.city]||HOTEL_COORDS.lima;
-    var query=encodeURIComponent(entry.name+", "+(entry.city==="cusco"?"Cusco, Peru":"Miraflores, Lima, Peru"));
-    fetch("https://nominatim.openstreetmap.org/search?q="+query+"&format=json&limit=1")
+    // Search with city + country for better precision
+    var cityStr=entry.city==="cusco"?"Cusco, Peru":"Lima, Peru";
+    var query=encodeURIComponent(entry.name+", "+cityStr);
+    fetch("https://nominatim.openstreetmap.org/search?q="+query+"&format=json&limit=3&addressdetails=1&countrycodes=pe")
       .then(function(r){return r.json();})
       .then(function(results){
         if(!results||!results.length){
-          // Not found — try broader search without district
-          var q2=encodeURIComponent(entry.name+", "+(entry.city==="cusco"?"Peru":"Lima, Peru"));
-          return fetch("https://nominatim.openstreetmap.org/search?q="+q2+"&format=json&limit=1")
-            .then(function(r){return r.json();})
-            .then(function(r2){
-              if(!r2||!r2.length){updateQuestDist(entry.id,{notFound:true});return;}
-              routeFromCoords(entry,hotel,parseFloat(r2[0].lat),parseFloat(r2[0].lon));
-            });
+          updateQuestDist(entry.id,{notFound:true});
+          return;
         }
-        routeFromCoords(entry,hotel,parseFloat(results[0].lat),parseFloat(results[0].lon));
+        // Pick best result: prefer amenity/restaurant types, fallback to first
+        var best=results.find(function(r){return r.type==="restaurant"||r.type==="cafe"||r.type==="bar"||r.type==="fast_food"||r.type==="museum"||r.type==="attraction"||r.class==="amenity"||r.class==="tourism";
+        })||results[0];
+        var lat=parseFloat(best.lat),lon=parseFloat(best.lon);
+        // Build a clean short address from addressdetails
+        var addr=best.address||{};
+        var parts=[];
+        if(addr.road)parts.push(addr.road);
+        if(addr.suburb||addr.neighbourhood)parts.push(addr.suburb||addr.neighbourhood);
+        var shortAddr=parts.length?parts.join(", "):(best.display_name||"").split(",").slice(0,2).join(",").trim();
+        routeFromCoords(entry,hotel,lat,lon,shortAddr);
       }).catch(function(){updateQuestDist(entry.id,{error:true});});
   }
-  function routeFromCoords(entry,hotel,lat,lon){
+  function routeFromCoords(entry,hotel,lat,lon,resolvedAddr){
     var walkUrl="https://router.project-osrm.org/route/v1/foot/"+hotel.lon+","+hotel.lat+";"+lon+","+lat+"?overview=false";
     var driveUrl="https://router.project-osrm.org/route/v1/driving/"+hotel.lon+","+hotel.lat+";"+lon+","+lat+"?overview=false";
     Promise.all([fetch(walkUrl).then(function(r){return r.json();}),fetch(driveUrl).then(function(r){return r.json();})])
@@ -594,7 +600,7 @@ function App(){
         var driveSec=data[1].routes&&data[1].routes[0]?data[1].routes[0].duration:null;
         var walkMin=walkSec?Math.round(walkSec/60):null;
         var driveMin=driveSec?Math.round(driveSec/60):null;
-        updateQuestDist(entry.id,{walkMin:walkMin,driveMin:driveMin,lat:lat,lon:lon});
+        updateQuestDist(entry.id,{walkMin:walkMin,driveMin:driveMin,lat:lat,lon:lon,resolvedAddr:resolvedAddr||null});
       }).catch(function(){updateQuestDist(entry.id,{error:true});});
   }
 
@@ -952,6 +958,8 @@ h(SyncBadge,{status:syncStatus})
                     h("span",{style:{fontSize:14,fontWeight:600,color:q.done?"#8b949e":"#e6edf3",textDecoration:q.done?"line-through":"none"}},q.name),
                     h("span",{style:{fontSize:10,background:catObj.color+"22",color:catObj.color,padding:"2px 7px",borderRadius:20,fontWeight:600,flexShrink:0}},catObj.icon+" "+catObj.label)
                   ),
+                  // Resolved address
+                  q.dist&&q.dist.resolvedAddr?h("div",{style:{fontSize:11,color:"#8b949e",marginBottom:4,fontStyle:"italic"}},"\uD83D\uDCCD "+q.dist.resolvedAddr):null,
                   // Notes
                   q.notes?h("div",{style:{fontSize:12,color:"#8b949e",marginBottom:6}},q.notes):null,
                   // Distance row
@@ -965,11 +973,12 @@ h(SyncBadge,{status:syncStatus})
                       ):
                       q.dist.error?
                       h("span",{style:{fontSize:11,color:"#484f58"}},"Distance unavailable"):
-                      h("span",{style:{fontSize:11,color:"#4ecdc4",display:"flex",alignItems:"center",gap:4}},
+                      h("span",{style:{fontSize:11,color:"#4ecdc4",display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}},
                         h("span",null,"\uD83D\uDEB6 "+(q.dist.walkMin!=null?q.dist.walkMin+"min walk":"\u2014")),
                         h("span",{style:{color:"#21262d"}},"\u00B7"),
                         h("span",null,"\uD83D\uDE97 "+(q.dist.driveMin!=null?q.dist.driveMin+"min drive":"\u2014")),
-                        q.dist.lat?h("a",{href:"https://www.google.com/maps/dir/?api=1&origin="+hotel.lat+","+hotel.lon+"&destination="+q.dist.lat+","+q.dist.lon,target:"_blank",style:{fontSize:11,color:"#4ecdc4",textDecoration:"none",marginLeft:4}},"\uD83D\uDDFA\uFE0F Maps"):null
+                        q.dist.lat?h("a",{href:"https://www.google.com/maps/dir/?api=1&origin="+hotel.lat+","+hotel.lon+"&destination="+q.dist.lat+","+q.dist.lon,target:"_blank",style:{fontSize:11,color:"#4ecdc4",textDecoration:"none",marginLeft:4}},"\uD83D\uDDFA\uFE0F Maps"):null,
+                        h("a",{href:"https://www.google.com/maps/search/"+encodeURIComponent(q.name+", "+(q.city==="cusco"?"Cusco Peru":"Lima Peru")),target:"_blank",style:{fontSize:10,color:"#484f58",textDecoration:"none",marginLeft:2,opacity:.7}},"wrong place?")
                       )
                     ):h("span",{style:{fontSize:11,color:"#484f58",fontStyle:"italic"}},"Getting distance\u2026")
                   )
