@@ -297,7 +297,8 @@ function App(){
   var _qs=us(""),questSearch=_qs[0],setQuestSearch=_qs[1];
   var _qnew=us({name:"",cat:"restaurant",notes:"",city:"auto"}),newQuest=_qnew[0],setNewQuest=_qnew[1];
   var _qadd=us(false),addingQuest=_qadd[0],setAddingQuest=_qadd[1];
-  var _qdp=us(null),questDayPicker=_qdp[0],setQuestDayPicker=_qdp[1]; // quest id being added to day
+  var _qdp=us(null),questDayPicker=_qdp[0],setQuestDayPicker=_qdp[1];
+  var _qma=us({}),manualAddrMap=_qma[0],setManualAddrMap=_qma[1]; // {questId: draftAddress string}
 
 
   var saveTimerRef=ur(null);
@@ -565,24 +566,55 @@ function App(){
   var toggleQuestDone=function(id){setQuests(function(prev){var n=prev.map(function(q){return q.id===id?Object.assign({},q,{done:!q.done}):q});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n})};
   var updateQuestDist=function(id,dist){setQuests(function(prev){var n=prev.map(function(q){return q.id===id?Object.assign({},q,{dist:dist,distLoading:dist===null}):q});return n})};
 
-  // Geocode + OSRM routing for a quest entry
+  var FSQ_KEY="Q2QWDWMBQIWHY4WES1M4P3IRRAOVJ1R015OVYSGCFRCYH1AW";
+
+  // Geocode via Foursquare Places API (accurate venue search) + OSRM routing
   function geocodeQuest(entry){
     var hotel=HOTEL_COORDS[entry.city]||HOTEL_COORDS.lima;
-    // Search with city + country for better precision
+    var ll=hotel.lat+","+hotel.lon; // bias results to hotel city
+    var url="https://api.foursquare.com/v3/places/search?query="+encodeURIComponent(entry.name)+"&ll="+ll+"&radius=30000&limit=5&fields=name,location,geocodes,categories";
+    fetch(url,{headers:{"Authorization":FSQ_KEY,"Accept":"application/json"}})
+      .then(function(r){return r.json();})
+      .then(function(data){
+        var results=data.results||[];
+        if(!results.length){updateQuestDist(entry.id,{notFound:true});return;}
+        // Pick best: prefer exact name match, then closest to hotel
+        var best=results.find(function(r){return r.name.toLowerCase()===entry.name.toLowerCase();});
+        if(!best){
+          // Pick closest to hotel by haversine
+          best=results.reduce(function(a,b){
+            var ag=a.geocodes&&a.geocodes.main,bg=b.geocodes&&b.geocodes.main;
+            if(!ag)return b;if(!bg)return a;
+            var da=Math.pow(ag.latitude-hotel.lat,2)+Math.pow(ag.longitude-hotel.lon,2);
+            var db=Math.pow(bg.latitude-hotel.lat,2)+Math.pow(bg.longitude-hotel.lon,2);
+            return da<=db?a:b;
+          });
+        }
+        var geo=best.geocodes&&best.geocodes.main;
+        if(!geo){updateQuestDist(entry.id,{notFound:true});return;}
+        var lat=geo.latitude,lon=geo.longitude;
+        var loc=best.location||{};
+        var parts=[];
+        if(loc.address)parts.push(loc.address);
+        if(loc.neighborhood||loc.locality)parts.push(loc.neighborhood||loc.locality);
+        var shortAddr=parts.length?parts.join(", "):best.name;
+        routeFromCoords(entry,hotel,lat,lon,shortAddr);
+      }).catch(function(){
+        // Foursquare failed — fall back to Nominatim
+        geocodeNominatim(entry,hotel);
+      });
+  }
+
+  // Nominatim fallback
+  function geocodeNominatim(entry,hotel){
     var cityStr=entry.city==="cusco"?"Cusco, Peru":"Lima, Peru";
     var query=encodeURIComponent(entry.name+", "+cityStr);
     fetch("https://nominatim.openstreetmap.org/search?q="+query+"&format=json&limit=3&addressdetails=1&countrycodes=pe")
       .then(function(r){return r.json();})
       .then(function(results){
-        if(!results||!results.length){
-          updateQuestDist(entry.id,{notFound:true});
-          return;
-        }
-        // Pick best result: prefer amenity/restaurant types, fallback to first
-        var best=results.find(function(r){return r.type==="restaurant"||r.type==="cafe"||r.type==="bar"||r.type==="fast_food"||r.type==="museum"||r.type==="attraction"||r.class==="amenity"||r.class==="tourism";
-        })||results[0];
+        if(!results||!results.length){updateQuestDist(entry.id,{notFound:true});return;}
+        var best=results.find(function(r){return r.type==="restaurant"||r.type==="cafe"||r.type==="bar"||r.class==="amenity"||r.class==="tourism";})||results[0];
         var lat=parseFloat(best.lat),lon=parseFloat(best.lon);
-        // Build a clean short address from addressdetails
         var addr=best.address||{};
         var parts=[];
         if(addr.road)parts.push(addr.road);
@@ -601,6 +633,43 @@ function App(){
         var walkMin=walkSec?Math.round(walkSec/60):null;
         var driveMin=driveSec?Math.round(driveSec/60):null;
         updateQuestDist(entry.id,{walkMin:walkMin,driveMin:driveMin,lat:lat,lon:lon,resolvedAddr:resolvedAddr||null});
+      }).catch(function(){updateQuestDist(entry.id,{error:true});});
+  }
+
+  function geocodeManual(entry,addrStr){
+    if(!addrStr.trim())return;
+    var hotel=HOTEL_COORDS[entry.city]||HOTEL_COORDS.lima;
+    updateQuestDist(entry.id,null);
+    // Try Foursquare first with the manual address as query
+    var ll=hotel.lat+","+hotel.lon;
+    var url="https://api.foursquare.com/v3/places/search?query="+encodeURIComponent(addrStr)+"&ll="+ll+"&radius=40000&limit=1&fields=name,location,geocodes";
+    fetch(url,{headers:{"Authorization":FSQ_KEY,"Accept":"application/json"}})
+      .then(function(r){return r.json();})
+      .then(function(data){
+        var results=data.results||[];
+        if(results.length&&results[0].geocodes&&results[0].geocodes.main){
+          var geo=results[0].geocodes.main;
+          var loc=results[0].location||{};
+          var parts=[];
+          if(loc.address)parts.push(loc.address);
+          if(loc.neighborhood||loc.locality)parts.push(loc.neighborhood||loc.locality);
+          var shortAddr=parts.length?parts.join(", "):results[0].name;
+          routeFromCoords(entry,hotel,geo.latitude,geo.longitude,shortAddr);
+          return;
+        }
+        // Fall back to Nominatim with manual string
+        fetch("https://nominatim.openstreetmap.org/search?q="+encodeURIComponent(addrStr+", Peru")+"&format=json&limit=1&countrycodes=pe")
+          .then(function(r){return r.json();})
+          .then(function(results){
+            if(!results||!results.length){updateQuestDist(entry.id,{notFound:true});return;}
+            var lat=parseFloat(results[0].lat),lon=parseFloat(results[0].lon);
+            var addr=results[0].address||{};
+            var parts=[];
+            if(addr.road)parts.push(addr.road);
+            if(addr.suburb||addr.neighbourhood)parts.push(addr.suburb||addr.neighbourhood);
+            var shortAddr=parts.length?parts.join(", "):(results[0].display_name||"").split(",").slice(0,2).join(",").trim();
+            routeFromCoords(entry,hotel,lat,lon,shortAddr);
+          }).catch(function(){updateQuestDist(entry.id,{error:true});});
       }).catch(function(){updateQuestDist(entry.id,{error:true});});
   }
 
@@ -958,8 +1027,37 @@ h(SyncBadge,{status:syncStatus})
                     h("span",{style:{fontSize:14,fontWeight:600,color:q.done?"#8b949e":"#e6edf3",textDecoration:q.done?"line-through":"none"}},q.name),
                     h("span",{style:{fontSize:10,background:catObj.color+"22",color:catObj.color,padding:"2px 7px",borderRadius:20,fontWeight:600,flexShrink:0}},catObj.icon+" "+catObj.label)
                   ),
-                  // Resolved address
-                  q.dist&&q.dist.resolvedAddr?h("div",{style:{fontSize:11,color:"#8b949e",marginBottom:4,fontStyle:"italic"}},"\uD83D\uDCCD "+q.dist.resolvedAddr):null,
+                  // Resolved address + manual override
+                  h("div",{style:{marginBottom:4}},
+                    q.dist&&q.dist.resolvedAddr?h("div",{style:{fontSize:11,color:"#8b949e",fontStyle:"italic",marginBottom:2}},"\uD83D\uDCCD "+q.dist.resolvedAddr):null,
+                    manualAddrMap[q.id]!==undefined?
+                      h("div",{style:{display:"flex",gap:6,alignItems:"center",marginTop:4}},
+                        h("input",{
+                          value:manualAddrMap[q.id],
+                          onChange:function(e){var v=e.target.value;setManualAddrMap(function(m){return Object.assign({},m,{[q.id]:v})});},
+                          onKeyDown:function(e){
+                            if(e.key==="Enter"&&manualAddrMap[q.id].trim()){geocodeManual(q,manualAddrMap[q.id]);setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});}
+                            if(e.key==="Escape"){setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});}
+                          },
+                          placeholder:"Paste address or street, e.g. Av. La Mar 770, Miraflores",
+                          autoFocus:true,
+                          style:{flex:1,background:"#0d1117",border:"1px solid #4ecdc4",borderRadius:6,padding:"5px 8px",fontSize:11,color:"#e6edf3",outline:"none"}
+                        }),
+                        h("button",{
+                          onClick:function(){
+                            if(manualAddrMap[q.id]&&manualAddrMap[q.id].trim()){
+                              geocodeManual(q,manualAddrMap[q.id]);
+                              setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});
+                            }
+                          },
+                          style:{background:"#238636",border:"none",borderRadius:6,padding:"5px 10px",fontSize:11,color:"#fff",cursor:"pointer",fontWeight:700,whiteSpace:"nowrap"}
+                        },"Go"),
+                        h("button",{
+                          onClick:function(){setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n})},
+                          style:{background:"transparent",border:"1px solid #30363d",borderRadius:6,padding:"5px 8px",fontSize:11,color:"#8b949e",cursor:"pointer"}
+                        },"\u2715")
+                      ):null
+                  ),
                   // Notes
                   q.notes?h("div",{style:{fontSize:12,color:"#8b949e",marginBottom:6}},q.notes):null,
                   // Distance row
@@ -978,7 +1076,7 @@ h(SyncBadge,{status:syncStatus})
                         h("span",{style:{color:"#21262d"}},"\u00B7"),
                         h("span",null,"\uD83D\uDE97 "+(q.dist.driveMin!=null?q.dist.driveMin+"min drive":"\u2014")),
                         q.dist.lat?h("a",{href:"https://www.google.com/maps/dir/?api=1&origin="+hotel.lat+","+hotel.lon+"&destination="+q.dist.lat+","+q.dist.lon,target:"_blank",style:{fontSize:11,color:"#4ecdc4",textDecoration:"none",marginLeft:4}},"\uD83D\uDDFA\uFE0F Maps"):null,
-                        h("a",{href:"https://www.google.com/maps/search/"+encodeURIComponent(q.name+", "+(q.city==="cusco"?"Cusco Peru":"Lima Peru")),target:"_blank",style:{fontSize:10,color:"#484f58",textDecoration:"none",marginLeft:2,opacity:.7}},"wrong place?")
+                        h("button",{onClick:function(){setManualAddrMap(function(m){var n=Object.assign({},m);n[q.id]="";return n;})},style:{fontSize:10,background:"transparent",border:"none",color:"#484f58",cursor:"pointer",padding:0,marginLeft:2,textDecoration:"underline",opacity:.7}},"wrong place?")
                       )
                     ):h("span",{style:{fontSize:11,color:"#484f58",fontStyle:"italic"}},"Getting distance\u2026")
                   )
