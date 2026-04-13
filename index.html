@@ -588,7 +588,14 @@ function App(){
   };
   var rmQuest=function(id){setQuests(function(prev){var n=prev.filter(function(q){return q.id!==id});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n})};
   var toggleQuestDone=function(id){setQuests(function(prev){var n=prev.map(function(q){return q.id===id?Object.assign({},q,{done:!q.done}):q});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n})};
-  var updateQuestDist=function(id,dist){setQuests(function(prev){var n=prev.map(function(q){return q.id===id?Object.assign({},q,{dist:dist,distLoading:dist===null}):q});return n})};
+  var updateQuestDist=function(id,dist){setQuests(function(prev){var n=prev.map(function(q){
+    if(q.id!==id)return q;
+    var updated=Object.assign({},q,{dist:dist,distLoading:dist===null});
+    if(dist&&(dist.notFound||dist.error)){
+      updated.name=q.name.replace(/\b\w/g,function(c){return c.toUpperCase();});
+    }
+    return updated;
+  });scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n});};
 
   // Geocode using Nominatim with smart venue-first search + OSRM routing
   // Parse lat/lon from a Google Maps URL
@@ -1220,7 +1227,7 @@ h(SyncBadge,{status:syncStatus})
                       h("span",{style:{fontSize:11,color:"#484f58"}},"Distance unavailable"):
                       h("span",{style:{fontSize:11,color:"#4ecdc4",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
                         q.dist.lat?h("a",{
-                          href:"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q.name+", "+(q.city==="cusco"?"Cusco":"Lima")+", Peru"),
+                          href:"https://www.google.com/maps?q="+q.dist.lat+","+q.dist.lon,
                           target:"_blank",
                           style:{fontSize:12,color:"#4ecdc4",textDecoration:"none",background:"rgba(78,205,196,0.12)",border:"1px solid rgba(78,205,196,0.3)",borderRadius:8,padding:"4px 10px",fontWeight:600}
                         },"\uD83D\uDDFA\uFE0F View on Maps"):null,
