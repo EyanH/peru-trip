@@ -569,40 +569,70 @@ function App(){
   var FSQ_KEY="Q2QWDWMBQIWHY4WES1M4P3IRRAOVJ1R015OVYSGCFRCYH1AW";
 
   // Geocode via Foursquare Places API (accurate venue search) + OSRM routing
+  // Category IDs: 13000=Food, 10000=Arts&Entertainment, 16000=Landmarks, 12000=Outdoors
+  var FSQ_CAT_MAP={restaurant:"13000",sight:"16000,10000",food:"13000",activity:"10000,18000"};
+
   function geocodeQuest(entry){
     var hotel=HOTEL_COORDS[entry.city]||HOTEL_COORDS.lima;
-    var ll=hotel.lat+","+hotel.lon; // bias results to hotel city
-    var url="https://api.foursquare.com/v3/places/search?query="+encodeURIComponent(entry.name)+"&ll="+ll+"&radius=30000&limit=5&fields=name,location,geocodes,categories";
+    var ll=hotel.lat+","+hotel.lon;
+    var cats=FSQ_CAT_MAP[entry.cat]||"13000";
+    // Use categories to filter out streets/neighborhoods, get only real venues
+    var url="https://api.foursquare.com/v3/places/search"
+      +"?query="+encodeURIComponent(entry.name)
+      +"&ll="+ll
+      +"&radius=30000"
+      +"&limit=10"
+      +"&categories="+cats
+      +"&fields=name,location,geocodes,categories";
     fetch(url,{headers:{"Authorization":FSQ_KEY,"Accept":"application/json"}})
       .then(function(r){return r.json();})
       .then(function(data){
-        var results=data.results||[];
-        if(!results.length){updateQuestDist(entry.id,{notFound:true});return;}
-        // Pick best: prefer exact name match, then closest to hotel
-        var best=results.find(function(r){return r.name.toLowerCase()===entry.name.toLowerCase();});
-        if(!best){
-          // Pick closest to hotel by haversine
-          best=results.reduce(function(a,b){
-            var ag=a.geocodes&&a.geocodes.main,bg=b.geocodes&&b.geocodes.main;
-            if(!ag)return b;if(!bg)return a;
-            var da=Math.pow(ag.latitude-hotel.lat,2)+Math.pow(ag.longitude-hotel.lon,2);
-            var db=Math.pow(bg.latitude-hotel.lat,2)+Math.pow(bg.longitude-hotel.lon,2);
-            return da<=db?a:b;
-          });
+        var results=(data.results||[]).filter(function(r){
+          // Must have real geocodes
+          if(!r.geocodes||!r.geocodes.main)return false;
+          // Filter out results that are just streets/neighborhoods (no street number = probably not a venue)
+          var loc=r.location||{};
+          if(!loc.address&&!loc.formatted_address)return false;
+          return true;
+        });
+        if(!results.length){
+          // Retry without category filter — maybe it's an unusual venue type
+          var url2="https://api.foursquare.com/v3/places/search"
+            +"?query="+encodeURIComponent(entry.name)
+            +"&ll="+ll+"&radius=30000&limit=5&fields=name,location,geocodes";
+          return fetch(url2,{headers:{"Authorization":FSQ_KEY,"Accept":"application/json"}})
+            .then(function(r){return r.json();})
+            .then(function(data2){
+              var r2=(data2.results||[]).filter(function(r){return r.geocodes&&r.geocodes.main&&(r.location&&r.location.address);});
+              if(!r2.length){updateQuestDist(entry.id,{notFound:true});return;}
+              pickAndRoute(entry,hotel,r2);
+            });
         }
-        var geo=best.geocodes&&best.geocodes.main;
-        if(!geo){updateQuestDist(entry.id,{notFound:true});return;}
-        var lat=geo.latitude,lon=geo.longitude;
-        var loc=best.location||{};
-        var parts=[];
-        if(loc.address)parts.push(loc.address);
-        if(loc.neighborhood||loc.locality)parts.push(loc.neighborhood||loc.locality);
-        var shortAddr=parts.length?parts.join(", "):best.name;
-        routeFromCoords(entry,hotel,lat,lon,shortAddr);
+        pickAndRoute(entry,hotel,results);
       }).catch(function(){
-        // Foursquare failed — fall back to Nominatim
         geocodeNominatim(entry,hotel);
       });
+  }
+
+  function pickAndRoute(entry,hotel,results){
+    // Score: exact name match first, then partial match, then closest
+    var nameLow=entry.name.toLowerCase();
+    var exact=results.find(function(r){return r.name.toLowerCase()===nameLow;});
+    var partial=!exact&&results.find(function(r){return r.name.toLowerCase().indexOf(nameLow)>=0||nameLow.indexOf(r.name.toLowerCase())>=0;});
+    var best=exact||partial||results.reduce(function(a,b){
+      var ag=a.geocodes.main,bg=b.geocodes.main;
+      var da=Math.pow(ag.latitude-hotel.lat,2)+Math.pow(ag.longitude-hotel.lon,2);
+      var db=Math.pow(bg.latitude-hotel.lat,2)+Math.pow(bg.longitude-hotel.lon,2);
+      return da<=db?a:b;
+    });
+    var geo=best.geocodes.main;
+    var loc=best.location||{};
+    var addrParts=[];
+    if(loc.address)addrParts.push(loc.address);
+    if(loc.neighborhood||loc.locality)addrParts.push(loc.neighborhood||loc.locality);
+    var shortAddr=addrParts.length?addrParts.join(", "):best.name;
+    // Store the resolved venue name so we can update display
+    routeFromCoords(entry,hotel,geo.latitude,geo.longitude,shortAddr,best.name);
   }
 
   // Nominatim fallback
@@ -623,7 +653,7 @@ function App(){
         routeFromCoords(entry,hotel,lat,lon,shortAddr);
       }).catch(function(){updateQuestDist(entry.id,{error:true});});
   }
-  function routeFromCoords(entry,hotel,lat,lon,resolvedAddr){
+  function routeFromCoords(entry,hotel,lat,lon,resolvedAddr,resolvedName){
     var walkUrl="https://router.project-osrm.org/route/v1/foot/"+hotel.lon+","+hotel.lat+";"+lon+","+lat+"?overview=false";
     var driveUrl="https://router.project-osrm.org/route/v1/driving/"+hotel.lon+","+hotel.lat+";"+lon+","+lat+"?overview=false";
     Promise.all([fetch(walkUrl).then(function(r){return r.json();}),fetch(driveUrl).then(function(r){return r.json();})])
@@ -632,7 +662,21 @@ function App(){
         var driveSec=data[1].routes&&data[1].routes[0]?data[1].routes[0].duration:null;
         var walkMin=walkSec?Math.round(walkSec/60):null;
         var driveMin=driveSec?Math.round(driveSec/60):null;
-        updateQuestDist(entry.id,{walkMin:walkMin,driveMin:driveMin,lat:lat,lon:lon,resolvedAddr:resolvedAddr||null});
+        // Update dist AND upgrade the display name to the resolved venue name if we got one
+        setQuests(function(prev){
+          return prev.map(function(q){
+            if(q.id!==entry.id)return q;
+            var updated=Object.assign({},q,{
+              dist:{walkMin:walkMin,driveMin:driveMin,lat:lat,lon:lon,resolvedAddr:resolvedAddr||null},
+              distLoading:false
+            });
+            // Only update name if resolved name is longer/more specific than what user typed
+            if(resolvedName&&resolvedName.length>q.name.length){
+              updated.name=resolvedName;
+            }
+            return updated;
+          });
+        });
       }).catch(function(){updateQuestDist(entry.id,{error:true});});
   }
 
@@ -654,7 +698,7 @@ function App(){
           if(loc.address)parts.push(loc.address);
           if(loc.neighborhood||loc.locality)parts.push(loc.neighborhood||loc.locality);
           var shortAddr=parts.length?parts.join(", "):results[0].name;
-          routeFromCoords(entry,hotel,geo.latitude,geo.longitude,shortAddr);
+          routeFromCoords(entry,hotel,geo.latitude,geo.longitude,shortAddr,results[0].name);
           return;
         }
         // Fall back to Nominatim with manual string
