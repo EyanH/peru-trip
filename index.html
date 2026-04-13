@@ -579,12 +579,8 @@ function App(){
   // Parse lat/lon from a Google Maps URL
   function parseMapsUrl(url){
     if(!url)return null;
-    // Format: @lat,lon or /place/.../data=...!3dlat!4dlon or ?q=lat,lon or maps?ll=lat,lon
     var m;
-    // @lat,lon,zoom
-    m=url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-    if(m)return{lat:parseFloat(m[1]),lon:parseFloat(m[2])};
-    // !3dlat!4dlon (embedded data)
+    // !3dlat!4dlon — actual place pin, highest priority
     m=url.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
     if(m)return{lat:parseFloat(m[1]),lon:parseFloat(m[2])};
     // q=lat,lon
@@ -592,6 +588,9 @@ function App(){
     if(m)return{lat:parseFloat(m[1]),lon:parseFloat(m[2])};
     // ll=lat,lon
     m=url.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if(m)return{lat:parseFloat(m[1]),lon:parseFloat(m[2])};
+    // @lat,lon — map viewport center, last resort
+    m=url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
     if(m)return{lat:parseFloat(m[1]),lon:parseFloat(m[2])};
     return null;
   }
@@ -1036,7 +1035,7 @@ h(SyncBadge,{status:syncStatus})
             h("input",{
               value:newQuest.mapsUrl,
               onChange:function(e){setNewQuest(function(p){return Object.assign({},p,{mapsUrl:e.target.value})})},
-              placeholder:"Paste Google Maps share link (optional but recommended)",
+              placeholder:"Paste full URL from Maps address bar (not the short share link)",
               style:{width:"100%",background:"#0d1117",border:"1px solid "+(newQuest.mapsUrl&&parseMapsUrl(newQuest.mapsUrl)?"rgba(78,205,196,0.4)":newQuest.mapsUrl?"rgba(255,107,107,0.4)":"#30363d"),borderRadius:8,padding:"9px 12px",fontSize:13,color:"#e6edf3",outline:"none",boxSizing:"border-box"}
             }),
             newQuest.mapsUrl&&!parseMapsUrl(newQuest.mapsUrl)?h("div",{style:{fontSize:11,color:"#ff6b6b",marginTop:4}},"Couldn\u2019t find coordinates in this URL \u2014 will fall back to search"):
@@ -1128,10 +1127,10 @@ h(SyncBadge,{status:syncStatus})
                       h("span",{style:{fontSize:11,color:"#484f58"}},"Distance unavailable"):
                       h("span",{style:{fontSize:11,color:"#4ecdc4",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
                         q.dist.lat?h("a",{
-                          href:"https://www.google.com/maps/dir/?api=1&destination="+q.dist.lat+","+q.dist.lon,
+                          href:"https://www.google.com/maps/search/?api=1&query="+q.dist.lat+","+q.dist.lon,
                           target:"_blank",
                           style:{fontSize:12,color:"#4ecdc4",textDecoration:"none",background:"rgba(78,205,196,0.12)",border:"1px solid rgba(78,205,196,0.3)",borderRadius:8,padding:"4px 10px",fontWeight:600}
-                        },"\uD83D\uDDFA\uFE0F Get Directions"):null,
+                        },"\uD83D\uDDFA\uFE0F View on Maps"):null,
                         h("button",{onClick:function(){setManualAddrMap(function(m){var n=Object.assign({},m);n[q.id]="";return n;})},style:{fontSize:10,background:"transparent",border:"none",color:"#484f58",cursor:"pointer",padding:0,textDecoration:"underline",opacity:.7}},"wrong place?")
                       )
                     ):h("span",{style:{fontSize:11,color:"#484f58",fontStyle:"italic"}},"Finding location\u2026")
