@@ -295,7 +295,7 @@ function App(){
   var _ql=us(localStore.get("peru5-quests")||DEFAULT_QUESTS),quests=_ql[0],setQuests=_ql[1];
   var _qf=us("all"),questFilter=_qf[0],setQuestFilter=_qf[1];
   var _qs=us(""),questSearch=_qs[0],setQuestSearch=_qs[1];
-  var _qnew=us({name:"",cat:"restaurant",notes:"",city:"auto"}),newQuest=_qnew[0],setNewQuest=_qnew[1];
+  var _qnew=us({name:"",cat:"restaurant",notes:"",city:"auto",mapsUrl:""}),newQuest=_qnew[0],setNewQuest=_qnew[1];
   var _qadd=us(false),addingQuest=_qadd[0],setAddingQuest=_qadd[1];
   var _qdp=us(null),questDayPicker=_qdp[0],setQuestDayPicker=_qdp[1];
   var _qma=us({}),manualAddrMap=_qma[0],setManualAddrMap=_qma[1]; // {questId: draftAddress string}
@@ -556,17 +556,46 @@ function App(){
   var addQuest=function(q){
     var city=q.city==="auto"?detectQuestCity(q.name,q.notes):q.city;
     var entry={id:"q"+Date.now(),name:q.name,cat:q.cat,notes:q.notes,city:city,done:false,dist:null,distLoading:false,createdAt:Date.now()};
-    setQuests(function(prev){var n=prev.concat([entry]);scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n});
-    // kick off geocoding
-    geocodeQuest(entry);
+    // If a Maps URL was provided, extract coords directly — skip Nominatim
+    var coordsFromUrl=parseMapsUrl(q.mapsUrl||"");
+    if(coordsFromUrl){
+      var titleCased=q.name.replace(/\b\w/g,function(c){return c.toUpperCase();});
+      entry.name=titleCased;
+      entry.dist={lat:coordsFromUrl.lat,lon:coordsFromUrl.lon,resolvedAddr:null};
+      entry.distLoading=false;
+      setQuests(function(prev){var n=prev.concat([entry]);scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n});
+    } else {
+      setQuests(function(prev){var n=prev.concat([entry]);scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n});
+      geocodeQuest(entry);
+    }
     setAddingQuest(false);
-    setNewQuest({name:"",cat:"restaurant",notes:"",city:"auto"});
+    setNewQuest({name:"",cat:"restaurant",notes:"",city:"auto",mapsUrl:""});
   };
   var rmQuest=function(id){setQuests(function(prev){var n=prev.filter(function(q){return q.id!==id});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n})};
   var toggleQuestDone=function(id){setQuests(function(prev){var n=prev.map(function(q){return q.id===id?Object.assign({},q,{done:!q.done}):q});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n})};
   var updateQuestDist=function(id,dist){setQuests(function(prev){var n=prev.map(function(q){return q.id===id?Object.assign({},q,{dist:dist,distLoading:dist===null}):q});return n})};
 
   // Geocode using Nominatim with smart venue-first search + OSRM routing
+  // Parse lat/lon from a Google Maps URL
+  function parseMapsUrl(url){
+    if(!url)return null;
+    // Format: @lat,lon or /place/.../data=...!3dlat!4dlon or ?q=lat,lon or maps?ll=lat,lon
+    var m;
+    // @lat,lon,zoom
+    m=url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if(m)return{lat:parseFloat(m[1]),lon:parseFloat(m[2])};
+    // !3dlat!4dlon (embedded data)
+    m=url.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    if(m)return{lat:parseFloat(m[1]),lon:parseFloat(m[2])};
+    // q=lat,lon
+    m=url.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if(m)return{lat:parseFloat(m[1]),lon:parseFloat(m[2])};
+    // ll=lat,lon
+    m=url.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if(m)return{lat:parseFloat(m[1]),lon:parseFloat(m[2])};
+    return null;
+  }
+
   function geocodeQuest(entry){
     var hotel=HOTEL_COORDS[entry.city]||HOTEL_COORDS.lima;
     var cityStr=entry.city==="cusco"?"Cusco":"Lima";
@@ -998,6 +1027,20 @@ h(SyncBadge,{status:syncStatus})
           h("div",{style:{marginBottom:12}},
             h("div",{style:{fontSize:11,color:"#8b949e",marginBottom:4,fontWeight:600,textTransform:"uppercase",letterSpacing:.5}},"Notes (optional)"),
             h("input",{value:newQuest.notes,onChange:function(e){setNewQuest(function(p){return Object.assign({},p,{notes:e.target.value})})},placeholder:"e.g. Book ahead, lunch only, try the pisco sour",style:{width:"100%",background:"#0d1117",border:"1px solid #30363d",borderRadius:8,padding:"9px 12px",fontSize:13,color:"#e6edf3",outline:"none",boxSizing:"border-box"}})
+          ),
+          h("div",{style:{marginBottom:12}},
+            h("div",{style:{display:"flex",alignItems:"center",gap:6,marginBottom:4}},
+              h("div",{style:{fontSize:11,color:"#8b949e",fontWeight:600,textTransform:"uppercase",letterSpacing:.5}},"Google Maps URL"),
+              h("span",{style:{fontSize:10,background:"rgba(78,205,196,0.12)",color:"#4ecdc4",padding:"2px 7px",borderRadius:20,fontWeight:600}},"Skips guesswork")
+            ),
+            h("input",{
+              value:newQuest.mapsUrl,
+              onChange:function(e){setNewQuest(function(p){return Object.assign({},p,{mapsUrl:e.target.value})})},
+              placeholder:"Paste Google Maps share link (optional but recommended)",
+              style:{width:"100%",background:"#0d1117",border:"1px solid "+(newQuest.mapsUrl&&parseMapsUrl(newQuest.mapsUrl)?"rgba(78,205,196,0.4)":newQuest.mapsUrl?"rgba(255,107,107,0.4)":"#30363d"),borderRadius:8,padding:"9px 12px",fontSize:13,color:"#e6edf3",outline:"none",boxSizing:"border-box"}
+            }),
+            newQuest.mapsUrl&&!parseMapsUrl(newQuest.mapsUrl)?h("div",{style:{fontSize:11,color:"#ff6b6b",marginTop:4}},"Couldn\u2019t find coordinates in this URL \u2014 will fall back to search"):
+            newQuest.mapsUrl&&parseMapsUrl(newQuest.mapsUrl)?h("div",{style:{fontSize:11,color:"#4ecdc4",marginTop:4}},"\u2713 Coordinates found \u2014 exact location pinned"):null
           ),
           h("button",{onClick:function(){if(newQuest.name.trim())addQuest(newQuest)},disabled:!newQuest.name.trim(),style:{width:"100%",background:newQuest.name.trim()?"#238636":"#21262d",border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700,color:newQuest.name.trim()?"#fff":"#484f58",cursor:newQuest.name.trim()?"pointer":"default",transition:"all .15s"}},"Add to Quest Log")
         ):null,
