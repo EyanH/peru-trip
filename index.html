@@ -49,7 +49,6 @@ var TC={travel:{bg:"#0f1f2a",accent:"#4ecdc4",badge:"Transit"},explore:{bg:"#0f1
 var QUEST_CATS=[
   {id:"restaurant",label:"Restaurants & Bars",icon:"🍽️",color:"#ff6b6b"},
   {id:"sight",label:"Sights",icon:"🏛️",color:"#4ecdc4"},
-  {id:"food",label:"Food & Drinks",icon:"🥃",color:"#ffb347"},
   {id:"activity",label:"Activities",icon:"🎯",color:"#b8a9e8"}
 ];
 // Hotel coords for distance calc
@@ -581,7 +580,14 @@ function App(){
         }).catch(function(){});
     } else {
       setQuests(function(prev){var n=prev.concat([entry]);scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n});
-      geocodeQuest(entry);
+      // Activities don't require a location — only geocode if the user provided one (via mapsUrl or if they type an address later)
+      if(q.cat!=="activity"){
+        geocodeQuest(entry);
+      } else {
+        // Mark as no-location for activities — they can pin manually if desired
+        var noLocEntry=Object.assign({},entry,{dist:{noLocation:true},distLoading:false});
+        setQuests(function(prev){var n=prev.map(function(x){return x.id===entry.id?noLocEntry:x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n});
+      }
     }
     setAddingQuest(false);
     setNewQuest({name:"",cat:"restaurant",notes:"",city:"auto",mapsUrl:""});
@@ -775,7 +781,7 @@ function App(){
   ue(function(){
     if(!loaded)return;
     quests.forEach(function(q){
-      if(!q.dist&&!q.distLoading)geocodeQuest(q);
+      if(!q.dist&&!q.distLoading&&q.cat!=="activity")geocodeQuest(q);
     });
   },[loaded]);
 
@@ -1227,9 +1233,16 @@ h(SyncBadge,{status:syncStatus})
                       ):
                       q.dist.error?
                       h("span",{style:{fontSize:11,color:"#484f58"}},"Distance unavailable"):
+                      q.dist.noLocation?
+                      h("span",{style:{display:"flex",alignItems:"center",gap:6}},
+                        h("span",{style:{fontSize:11,color:"#484f58",fontStyle:"italic"}},"No location"),
+                        h("button",{onClick:function(){setManualAddrMap(function(m){var n=Object.assign({},m);n[q.id]="";return n;})},style:{fontSize:10,background:"transparent",border:"none",color:"#4ecdc4",cursor:"pointer",textDecoration:"underline"}},"Add location")
+                      ):
                       h("span",{style:{fontSize:11,color:"#4ecdc4",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
                         q.dist.lat?h("a",{
-                          href:q.mapsUrl||("https://www.google.com/maps?q="+q.dist.lat+","+q.dist.lon),
+                          href:q.mapsUrl||(q.dist.resolvedAddr
+                            ?("https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q.name+", "+(q.dist.resolvedAddr||"")))
+                            :("https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q.name+", "+(q.city==="cusco"?"Cusco":"Lima")+", Peru"))),
                           target:"_blank",
                           style:{fontSize:12,color:"#4ecdc4",textDecoration:"none",background:"rgba(78,205,196,0.12)",border:"1px solid rgba(78,205,196,0.3)",borderRadius:8,padding:"4px 10px",fontWeight:600}
                         },"\uD83D\uDDFA\uFE0F View on Maps"):null,
