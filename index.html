@@ -45,6 +45,25 @@ function detectFlags(t){if(!t)return[];var l=t.toLowerCase(),f={};for(var k in F
 
 var TC={travel:{bg:"#0f1f2a",accent:"#4ecdc4",badge:"Transit"},explore:{bg:"#0f1f12",accent:"#a8e6a3",badge:"Explore"},trek:{bg:"#1f160a",accent:"#ffb347",badge:"Trek"},flex:{bg:"#14122a",accent:"#b8a9e8",badge:"Flex"}};
 
+// ─── QUEST LOG ────────────────────────────────────────────────────────────────
+var QUEST_CATS=[
+  {id:"restaurant",label:"Restaurants & Bars",icon:"🍽️",color:"#ff6b6b"},
+  {id:"sight",label:"Sights",icon:"🏛️",color:"#4ecdc4"},
+  {id:"food",label:"Food & Drinks",icon:"🥃",color:"#ffb347"},
+  {id:"activity",label:"Activities",icon:"🎯",color:"#b8a9e8"}
+];
+// Hotel coords for distance calc
+var HOTEL_COORDS={
+  lima:{lat:-12.1209,lon:-77.0282,name:"Radisson RED Miraflores"},
+  cusco:{lat:-13.5253,lon:-71.9762,name:"Atiq / Amerindia Hotel"}
+};
+function detectQuestCity(name,notes){
+  var t=((name||"")+" "+(notes||"")).toLowerCase();
+  if(t.indexOf("cusco")>=0||t.indexOf("cuz")>=0||t.indexOf("sacred valley")>=0||t.indexOf("machu")>=0)return"cusco";
+  return"lima";
+}
+var DEFAULT_QUESTS=[];
+
 var DEFAULT_META={tripName:"Peru",startDate:"2026-04-18",endDate:"2026-04-30",subtitle:"Toronto \u2192 Lima \u2192 Cusco \u2192 Machu Picchu \u2192 Home",stats:[{n:"13",l:"days"},{n:"5",l:"cities"},{n:"2,430m",l:"peak alt."},{n:"4",l:"flights"}]};
 
 var MONTH_LONG=["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -273,6 +292,12 @@ function App(){
   var _meta=us(localStore.get("peru5-meta")||DEFAULT_META),meta=_meta[0],setMeta=_meta[1];
   var _fl=us(localStore.get("peru5-flights")||DEFAULT_FLIGHTS),flights=_fl[0],setFlights=_fl[1];
   var _fn=us(localStore.get("peru5-flnotes")||DEFAULT_FLIGHTNOTES),flnotes=_fn[0],setFlnotes=_fn[1];
+  var _ql=us(localStore.get("peru5-quests")||DEFAULT_QUESTS),quests=_ql[0],setQuests=_ql[1];
+  var _qf=us("all"),questFilter=_qf[0],setQuestFilter=_qf[1];
+  var _qs=us(""),questSearch=_qs[0],setQuestSearch=_qs[1];
+  var _qnew=us({name:"",cat:"restaurant",notes:"",city:"auto"}),newQuest=_qnew[0],setNewQuest=_qnew[1];
+  var _qadd=us(false),addingQuest=_qadd[0],setAddingQuest=_qadd[1];
+  var _qdp=us(null),questDayPicker=_qdp[0],setQuestDayPicker=_qdp[1]; // quest id being added to day
 
 
   var saveTimerRef=ur(null);
@@ -391,6 +416,7 @@ function App(){
         if(d.meta)setMeta(d.meta);
         if(d.flights)setFlights(d.flights);
         if(d.flnotes)setFlnotes(d.flnotes);
+        if(d.quests)setQuests(d.quests);
       }
       setSyncStatus("saved");
       setLoaded(true);
@@ -402,7 +428,7 @@ function App(){
   },[]);
 
   // Debounced save to Firebase
-  function scheduleSync(newDays,newPacking,newChecked,newMeta,newFlights,newFlnotes){
+  function scheduleSync(newDays,newPacking,newChecked,newMeta,newFlights,newFlnotes,newQuests){
     if(!db)return;
     setSyncStatus("saving");
     clearTimeout(saveTimerRef.current);
@@ -414,6 +440,7 @@ function App(){
         meta:newMeta||meta,
         flights:newFlights||flights,
         flnotes:newFlnotes||flnotes,
+        quests:newQuests||quests,
         updatedAt:firebase.firestore.FieldValue.serverTimestamp()
       };
       // Also save locally as backup
@@ -423,6 +450,7 @@ function App(){
       localStore.set("peru5-meta",payload.meta);
       localStore.set("peru5-flights",payload.flights);
       localStore.set("peru5-flnotes",payload.flnotes);
+      localStore.set("peru5-quests",payload.quests);
       db.collection("trips").doc(DOC_ID).set(payload,{merge:true}).then(function(){
         setSyncStatus("saved");
       }).catch(function(e){
@@ -522,12 +550,83 @@ function App(){
   var addFlight=function(){setFlights(function(f){var n=f.concat([{route:"New Route",date:"Date",flights:"Flight #",fare:""}]);scheduleSync(undefined,undefined,undefined,undefined,n);return n})};
   var rmFlight=function(i){setFlights(function(f){var n=f.filter(function(_,j){return j!==i});scheduleSync(undefined,undefined,undefined,undefined,n);return n})};
   var upFlnotes=function(p){setFlnotes(function(fn){var n=Object.assign({},fn,p);scheduleSync(undefined,undefined,undefined,undefined,undefined,n);return n})};
-    var dn2idx=function(dateStr){return days.findIndex(function(d){return d.date===dateStr})};
+
+  // Quest mutations
+  var addQuest=function(q){
+    var city=q.city==="auto"?detectQuestCity(q.name,q.notes):q.city;
+    var entry={id:"q"+Date.now(),name:q.name,cat:q.cat,notes:q.notes,city:city,done:false,dist:null,distLoading:false,createdAt:Date.now()};
+    setQuests(function(prev){var n=prev.concat([entry]);scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n});
+    // kick off geocoding
+    geocodeQuest(entry);
+    setAddingQuest(false);
+    setNewQuest({name:"",cat:"restaurant",notes:"",city:"auto"});
+  };
+  var rmQuest=function(id){setQuests(function(prev){var n=prev.filter(function(q){return q.id!==id});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n})};
+  var toggleQuestDone=function(id){setQuests(function(prev){var n=prev.map(function(q){return q.id===id?Object.assign({},q,{done:!q.done}):q});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n})};
+  var updateQuestDist=function(id,dist){setQuests(function(prev){var n=prev.map(function(q){return q.id===id?Object.assign({},q,{dist:dist,distLoading:dist===null}):q});return n})};
+
+  // Geocode + OSRM routing for a quest entry
+  function geocodeQuest(entry){
+    var hotel=HOTEL_COORDS[entry.city]||HOTEL_COORDS.lima;
+    var query=encodeURIComponent(entry.name+", "+(entry.city==="cusco"?"Cusco, Peru":"Miraflores, Lima, Peru"));
+    fetch("https://nominatim.openstreetmap.org/search?q="+query+"&format=json&limit=1")
+      .then(function(r){return r.json();})
+      .then(function(results){
+        if(!results||!results.length){
+          // Not found — try broader search without district
+          var q2=encodeURIComponent(entry.name+", "+(entry.city==="cusco"?"Peru":"Lima, Peru"));
+          return fetch("https://nominatim.openstreetmap.org/search?q="+q2+"&format=json&limit=1")
+            .then(function(r){return r.json();})
+            .then(function(r2){
+              if(!r2||!r2.length){updateQuestDist(entry.id,{notFound:true});return;}
+              routeFromCoords(entry,hotel,parseFloat(r2[0].lat),parseFloat(r2[0].lon));
+            });
+        }
+        routeFromCoords(entry,hotel,parseFloat(results[0].lat),parseFloat(results[0].lon));
+      }).catch(function(){updateQuestDist(entry.id,{error:true});});
+  }
+  function routeFromCoords(entry,hotel,lat,lon){
+    var walkUrl="https://router.project-osrm.org/route/v1/foot/"+hotel.lon+","+hotel.lat+";"+lon+","+lat+"?overview=false";
+    var driveUrl="https://router.project-osrm.org/route/v1/driving/"+hotel.lon+","+hotel.lat+";"+lon+","+lat+"?overview=false";
+    Promise.all([fetch(walkUrl).then(function(r){return r.json();}),fetch(driveUrl).then(function(r){return r.json();})])
+      .then(function(data){
+        var walkSec=data[0].routes&&data[0].routes[0]?data[0].routes[0].duration:null;
+        var driveSec=data[1].routes&&data[1].routes[0]?data[1].routes[0].duration:null;
+        var walkMin=walkSec?Math.round(walkSec/60):null;
+        var driveMin=driveSec?Math.round(driveSec/60):null;
+        updateQuestDist(entry.id,{walkMin:walkMin,driveMin:driveMin,lat:lat,lon:lon});
+      }).catch(function(){updateQuestDist(entry.id,{error:true});});
+  }
+
+  // Re-geocode quests that have no dist on load
+  ue(function(){
+    if(!loaded)return;
+    quests.forEach(function(q){
+      if(!q.dist&&!q.distLoading)geocodeQuest(q);
+    });
+  },[loaded]);
+
+  var dn2idx=function(dateStr){return days.findIndex(function(d){return d.date===dateStr})};
+
+  // Add quest to a specific day
+  var addQuestToDay=function(questId,dayIdx){
+    var q=quests.find(function(x){return x.id===questId});
+    if(!q)return;
+    var catObj=QUEST_CATS.find(function(c){return c.id===q.cat})||QUEST_CATS[0];
+    var newDetail={time:"TBD",text:catObj.icon+" "+q.name,sub:q.notes||""};
+    setDays(function(d){
+      var n=d.slice();
+      n[dayIdx]=Object.assign({},n[dayIdx],{details:n[dayIdx].details.concat([newDetail])});
+      scheduleSync(n);
+      return n;
+    });
+    setQuestDayPicker(null);
+  };
 
   var totalP=Object.values(checked).filter(Boolean).length,totalI=Object.values(packing).flat().length;
   var allFlags=detectFlags(days.map(function(d){return d.title+" "+d.location}).join(" "));
   var mw=mobile?"100%":540,pd=mobile?14:20;
-  var tabs=[{id:"itinerary",l:"Trip",i:"\uD83D\uDCC5"},{id:"packing",l:"Pack",i:"\uD83C\uDF92"},{id:"flights",l:"Flights",i:"\u2708\uFE0F"},{id:"info",l:"Info",i:"\uD83D\uDCCC"}];
+  var tabs=[{id:"itinerary",l:"Trip",i:"\uD83D\uDCC5"},{id:"packing",l:"Pack",i:"\uD83C\uDF92"},{id:"flights",l:"Flights",i:"\u2708\uFE0F"},{id:"quests",l:"Quests",i:"\uD83E\uDDED"},{id:"info",l:"Info",i:"\uD83D\uDCCC"}];
   var aIdx=overlay>=0?overlay:expanded;
   var aDate=aIdx>=0&&aIdx<days.length?days[aIdx].date:null;
   var tDates=days.map(function(d){return d.date});
@@ -752,7 +851,140 @@ h(SyncBadge,{status:syncStatus})
       ):null,
 
       // INFO
-      tab==="info"?INFO.map(function(infoCard,i){return h("div",{key:i,style:{background:"#161b22",border:"1px solid #21262d",borderRadius:14,padding:16,marginBottom:8}},h("div",{style:{fontSize:14,fontWeight:700,marginBottom:10}},infoCard.title),h("div",{style:{fontSize:13,lineHeight:1.8,color:"#c9d1d9",whiteSpace:"pre-line"}},infoCard.content))}):null
+      tab==="info"?INFO.map(function(infoCard,i){return h("div",{key:i,style:{background:"#161b22",border:"1px solid #21262d",borderRadius:14,padding:16,marginBottom:8}},h("div",{style:{fontSize:14,fontWeight:700,marginBottom:10}},infoCard.title),h("div",{style:{fontSize:13,lineHeight:1.8,color:"#c9d1d9",whiteSpace:"pre-line"}},infoCard.content))}):null,
+
+      // QUEST LOG
+      tab==="quests"?h("div",null,
+
+        // Day picker modal
+        questDayPicker?h("div",{style:{position:"fixed",top:0,left:0,right:0,bottom:0,zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:16},onClick:function(){setQuestDayPicker(null)}},
+          h("div",{style:{position:"absolute",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(10px)"}}),
+          h("div",{onClick:function(e){e.stopPropagation()},style:{position:"relative",background:"#161b22",border:"1px solid #30363d",borderRadius:16,padding:20,width:"100%",maxWidth:360,maxHeight:"70vh",overflowY:"auto",zIndex:1}},
+            h("div",{style:{fontSize:14,fontWeight:700,marginBottom:14,color:"#e6edf3"}},"Add to which day?"),
+            days.map(function(day,i){
+              var tc=TC[day.type]||TC.explore;
+              return h("button",{key:day.id,onClick:function(){addQuestToDay(questDayPicker,i)},style:{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid #21262d",borderRadius:10,padding:"10px 14px",marginBottom:6,cursor:"pointer",display:"flex",alignItems:"center",gap:10,textAlign:"left",transition:"border-color .15s"},
+                onMouseEnter:function(e){e.currentTarget.style.borderColor=tc.accent+"66"},
+                onMouseLeave:function(e){e.currentTarget.style.borderColor="#21262d"}},
+                h("div",{style:{fontSize:11,fontWeight:700,color:tc.accent,minWidth:50}},day.day),
+                h("div",null,
+                  h("div",{style:{fontSize:13,fontWeight:600,color:"#e6edf3"}},day.title),
+                  h("div",{style:{fontSize:11,color:"#8b949e"}},day.date)
+                )
+              );
+            }),
+            h("button",{onClick:function(){setQuestDayPicker(null)},style:{width:"100%",marginTop:8,background:"transparent",border:"1px solid #30363d",borderRadius:10,padding:"10px",fontSize:13,color:"#8b949e",cursor:"pointer"}},"Cancel")
+          )
+        ):null,
+
+        // Header
+        h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}},
+          h("div",null,
+            h("div",{style:{fontSize:11,color:"#484f58",textTransform:"uppercase",letterSpacing:1.5,fontWeight:600}},"Quest Log"),
+            h("div",{style:{fontSize:12,color:"#484f58",marginTop:2}},quests.filter(function(q){return q.done}).length+"/"+quests.length+" done")
+          ),
+          h("button",{onClick:function(){setAddingQuest(!addingQuest)},style:{background:addingQuest?"rgba(255,255,255,0.08)":"rgba(78,205,196,0.12)",border:"1px solid "+(addingQuest?"#30363d":"rgba(78,205,196,0.3)"),borderRadius:8,padding:"7px 14px",fontSize:12,color:addingQuest?"#8b949e":"#4ecdc4",cursor:"pointer",fontWeight:600}},addingQuest?"\u2715 Cancel":"+ Add Place")
+        ),
+
+        // Add form
+        addingQuest?h("div",{style:{background:"#161b22",border:"1px solid #4ecdc444",borderRadius:14,padding:16,marginBottom:14}},
+          h("div",{style:{marginBottom:10}},
+            h("div",{style:{fontSize:11,color:"#8b949e",marginBottom:4,fontWeight:600,textTransform:"uppercase",letterSpacing:.5}},"Place Name"),
+            h("input",{value:newQuest.name,onChange:function(e){setNewQuest(function(p){return Object.assign({},p,{name:e.target.value})})},placeholder:"e.g. La Mar Cebicheria",autoFocus:true,style:{width:"100%",background:"#0d1117",border:"1px solid #30363d",borderRadius:8,padding:"9px 12px",fontSize:13,color:"#e6edf3",outline:"none",boxSizing:"border-box"}})
+          ),
+          h("div",{style:{display:"flex",gap:8,marginBottom:10}},
+            h("div",{style:{flex:1}},
+              h("div",{style:{fontSize:11,color:"#8b949e",marginBottom:4,fontWeight:600,textTransform:"uppercase",letterSpacing:.5}},"Category"),
+              h("select",{value:newQuest.cat,onChange:function(e){setNewQuest(function(p){return Object.assign({},p,{cat:e.target.value})})},style:{width:"100%",background:"#0d1117",border:"1px solid #30363d",borderRadius:8,padding:"9px 12px",fontSize:13,color:"#e6edf3",outline:"none",boxSizing:"border-box",cursor:"pointer"}},
+                QUEST_CATS.map(function(c){return h("option",{key:c.id,value:c.id},c.icon+" "+c.label)})
+              )
+            ),
+            h("div",{style:{flex:1}},
+              h("div",{style:{fontSize:11,color:"#8b949e",marginBottom:4,fontWeight:600,textTransform:"uppercase",letterSpacing:.5}},"City"),
+              h("select",{value:newQuest.city,onChange:function(e){setNewQuest(function(p){return Object.assign({},p,{city:e.target.value})})},style:{width:"100%",background:"#0d1117",border:"1px solid #30363d",borderRadius:8,padding:"9px 12px",fontSize:13,color:"#e6edf3",outline:"none",boxSizing:"border-box",cursor:"pointer"}},
+                h("option",{value:"auto"},"Auto-detect"),
+                h("option",{value:"lima"},"🇵🇪 Lima"),
+                h("option",{value:"cusco"},"🇵🇪 Cusco")
+              )
+            )
+          ),
+          h("div",{style:{marginBottom:12}},
+            h("div",{style:{fontSize:11,color:"#8b949e",marginBottom:4,fontWeight:600,textTransform:"uppercase",letterSpacing:.5}},"Notes (optional)"),
+            h("input",{value:newQuest.notes,onChange:function(e){setNewQuest(function(p){return Object.assign({},p,{notes:e.target.value})})},placeholder:"e.g. Book ahead, lunch only, try the pisco sour",style:{width:"100%",background:"#0d1117",border:"1px solid #30363d",borderRadius:8,padding:"9px 12px",fontSize:13,color:"#e6edf3",outline:"none",boxSizing:"border-box"}})
+          ),
+          h("button",{onClick:function(){if(newQuest.name.trim())addQuest(newQuest)},disabled:!newQuest.name.trim(),style:{width:"100%",background:newQuest.name.trim()?"#238636":"#21262d",border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700,color:newQuest.name.trim()?"#fff":"#484f58",cursor:newQuest.name.trim()?"pointer":"default",transition:"all .15s"}},"Add to Quest Log")
+        ):null,
+
+        // Category filter pills
+        h("div",{style:{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}},
+          [{id:"all",label:"All",icon:"🗺️",color:"#4ecdc4"}].concat(QUEST_CATS).map(function(c){
+            var active=questFilter===c.id;
+            return h("button",{key:c.id,onClick:function(){setQuestFilter(c.id)},style:{background:active?c.color+"22":"rgba(255,255,255,0.04)",border:"1px solid "+(active?c.color+"55":"#21262d"),borderRadius:20,padding:"5px 12px",fontSize:11,fontWeight:600,color:active?c.color:"#8b949e",cursor:"pointer",transition:"all .15s"}},c.icon+" "+c.label);
+          })
+        ),
+
+        // Search
+        h("div",{style:{marginBottom:12,position:"relative"}},
+          h("input",{value:questSearch,onChange:function(e){setQuestSearch(e.target.value)},placeholder:"Search places...",style:{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid #21262d",borderRadius:10,padding:"9px 14px 9px 36px",fontSize:13,color:"#e6edf3",outline:"none",boxSizing:"border-box"}}),
+          h("span",{style:{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:14,opacity:.4}},"🔍")
+        ),
+
+        // Quest items
+        (function(){
+          var filtered=quests.filter(function(q){
+            var matchCat=questFilter==="all"||q.cat===questFilter;
+            var matchSearch=!questSearch.trim()||q.name.toLowerCase().indexOf(questSearch.toLowerCase())>=0||(q.notes||"").toLowerCase().indexOf(questSearch.toLowerCase())>=0;
+            return matchCat&&matchSearch;
+          });
+          // Sort: undone first, then done
+          filtered=filtered.slice().sort(function(a,b){return (a.done?1:0)-(b.done?1:0)});
+          if(!filtered.length)return h("div",{style:{textAlign:"center",padding:"40px 0",color:"#484f58",fontSize:13}},"No places yet. Hit + Add Place to start your quest log.");
+          return filtered.map(function(q){
+            var catObj=QUEST_CATS.find(function(c){return c.id===q.cat})||QUEST_CATS[0];
+            var hotel=HOTEL_COORDS[q.city]||HOTEL_COORDS.lima;
+            return h("div",{key:q.id,style:{background:q.done?"rgba(255,255,255,0.02)":"#161b22",border:"1px solid "+(q.done?"#21262d":catObj.color+"33"),borderRadius:14,padding:"12px 14px",marginBottom:8,opacity:q.done?.6:1,transition:"all .2s"}},
+              h("div",{style:{display:"flex",alignItems:"flex-start",gap:10}},
+                // Done checkbox
+                h("button",{onClick:function(){toggleQuestDone(q.id)},style:{flexShrink:0,width:22,height:22,borderRadius:6,border:"2px solid "+(q.done?catObj.color:"#30363d"),background:q.done?catObj.color:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",marginTop:1,transition:"all .15s",fontSize:12,color:"#fff"}},q.done?"\u2713":""),
+                h("div",{style:{flex:1,minWidth:0}},
+                  // Name + cat pill
+                  h("div",{style:{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:3}},
+                    h("span",{style:{fontSize:14,fontWeight:600,color:q.done?"#8b949e":"#e6edf3",textDecoration:q.done?"line-through":"none"}},q.name),
+                    h("span",{style:{fontSize:10,background:catObj.color+"22",color:catObj.color,padding:"2px 7px",borderRadius:20,fontWeight:600,flexShrink:0}},catObj.icon+" "+catObj.label)
+                  ),
+                  // Notes
+                  q.notes?h("div",{style:{fontSize:12,color:"#8b949e",marginBottom:6}},q.notes):null,
+                  // Distance row
+                  h("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}},
+                    h("span",{style:{fontSize:11,color:"#484f58"}},q.city==="cusco"?"\uD83C\uDFD4\uFE0F Cusco":"\uD83C\uDF0A Lima"),
+                    h("span",{style:{color:"#21262d"}},"\u00B7"),
+                    q.dist?(q.dist.notFound?
+                      h("span",{style:{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
+                        h("span",{style:{fontSize:11,color:"#ff6b6b",fontWeight:600}},"\u26A0\uFE0F Place not found \u2014 check spelling"),
+                        h("button",{onClick:function(){updateQuestDist(q.id,null);geocodeQuest(q);},style:{fontSize:10,background:"rgba(255,107,107,0.12)",border:"1px solid rgba(255,107,107,0.3)",borderRadius:6,padding:"2px 7px",color:"#ff6b6b",cursor:"pointer"}},"Retry")
+                      ):
+                      q.dist.error?
+                      h("span",{style:{fontSize:11,color:"#484f58"}},"Distance unavailable"):
+                      h("span",{style:{fontSize:11,color:"#4ecdc4",display:"flex",alignItems:"center",gap:4}},
+                        h("span",null,"\uD83D\uDEB6 "+(q.dist.walkMin!=null?q.dist.walkMin+"min walk":"\u2014")),
+                        h("span",{style:{color:"#21262d"}},"\u00B7"),
+                        h("span",null,"\uD83D\uDE97 "+(q.dist.driveMin!=null?q.dist.driveMin+"min drive":"\u2014")),
+                        q.dist.lat?h("a",{href:"https://www.google.com/maps/dir/?api=1&origin="+hotel.lat+","+hotel.lon+"&destination="+q.dist.lat+","+q.dist.lon,target:"_blank",style:{fontSize:11,color:"#4ecdc4",textDecoration:"none",marginLeft:4}},"\uD83D\uDDFA\uFE0F Maps"):null
+                      )
+                    ):h("span",{style:{fontSize:11,color:"#484f58",fontStyle:"italic"}},"Getting distance\u2026")
+                  )
+                ),
+                // Actions
+                h("div",{style:{display:"flex",flexDirection:"column",gap:4,flexShrink:0}},
+                  h("button",{onClick:function(){setQuestDayPicker(q.id)},title:"Add to a day",style:{background:"rgba(78,205,196,0.1)",border:"1px solid rgba(78,205,196,0.25)",borderRadius:8,padding:"5px 8px",fontSize:12,color:"#4ecdc4",cursor:"pointer",whiteSpace:"nowrap"}},"\uD83D\uDCC5 Add to day"),
+                  h("button",{onClick:function(){rmQuest(q.id)},title:"Remove",style:{background:"transparent",border:"1px solid #21262d",borderRadius:8,padding:"5px 8px",fontSize:11,color:"#484f58",cursor:"pointer"},onMouseEnter:function(e){e.currentTarget.style.color="#ff6b6b";e.currentTarget.style.borderColor="#ff6b6b44"},onMouseLeave:function(e){e.currentTarget.style.color="#484f58";e.currentTarget.style.borderColor="#21262d"}},"\u00D7 Remove")
+                )
+              )
+            );
+          });
+        })()
+
+      ):null
     ),
 
     // MOBILE NAV
