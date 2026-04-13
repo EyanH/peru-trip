@@ -570,10 +570,13 @@ function App(){
   function geocodeQuest(entry){
     var hotel=HOTEL_COORDS[entry.city]||HOTEL_COORDS.lima;
     var cityStr=entry.city==="cusco"?"Cusco":"Lima";
-    var countryStr="Peru";
-    // Step 1: Try structured search (name + city) with amenity bias — finds real venues
+    // Append category hint to search to bias toward venues not streets
+    var catHint={restaurant:"restaurant",food:"cafe",sight:"",activity:""};
+    var hint=catHint[entry.cat]||"";
+    var searchName=hint?entry.name+" "+hint:entry.name;
+    // Step 1: Bounded search within city district
     var structUrl="https://nominatim.openstreetmap.org/search"
-      +"?q="+encodeURIComponent(entry.name)
+      +"?q="+encodeURIComponent(searchName)
       +"&format=json&limit=10&addressdetails=1&countrycodes=pe"
       +"&viewbox="+encodeURIComponent(
           entry.city==="cusco"?"-72.05,-13.45,-71.90,-13.60":"-77.15,-12.05,-76.95,-12.20"
@@ -582,42 +585,51 @@ function App(){
     fetch(structUrl)
       .then(function(r){return r.json();})
       .then(function(results){
-        // Filter: must be a venue (amenity/tourism/leisure class), not a street/highway
         var venues=(results||[]).filter(function(r){
-          return r.class==="amenity"||r.class==="tourism"||r.class==="leisure"||r.class==="shop"
-            ||r.type==="restaurant"||r.type==="cafe"||r.type==="bar"||r.type==="fast_food"
-            ||r.type==="museum"||r.type==="attraction"||r.type==="hotel";
+          return r.class==="amenity"||r.class==="tourism"||r.class==="leisure"||r.class==="shop";
         });
-        if(venues.length){
-          pickBestNominatim(entry,hotel,venues);
-          return;
-        }
-        // Step 2: Broader search without bounding box
+        if(venues.length){pickBestNominatim(entry,hotel,venues);return;}
+        // Step 2: Broader search with city name appended
         var broadUrl="https://nominatim.openstreetmap.org/search"
-          +"?q="+encodeURIComponent(entry.name+", "+cityStr+", "+countryStr)
-          +"&format=json&limit=5&addressdetails=1&countrycodes=pe";
+          +"?q="+encodeURIComponent(searchName+", "+cityStr+", Peru")
+          +"&format=json&limit=10&addressdetails=1&countrycodes=pe";
         return fetch(broadUrl)
           .then(function(r){return r.json();})
           .then(function(res2){
             var r2=(res2||[]).filter(function(r){
               return r.class==="amenity"||r.class==="tourism"||r.class==="leisure"||r.class==="shop";
             });
-            var best=r2.length?r2[0]:(res2&&res2.length?res2[0]:null);
-            if(!best){updateQuestDist(entry.id,{notFound:true});return;}
-            resolveNominatim(entry,hotel,[best]);
+            if(r2.length){resolveNominatim(entry,hotel,r2);return;}
+            // Step 3: Last resort — original name only, no hint, broader search
+            if(hint){
+              return fetch("https://nominatim.openstreetmap.org/search?q="+encodeURIComponent(entry.name+", "+cityStr+", Peru")+"&format=json&limit=5&addressdetails=1&countrycodes=pe")
+                .then(function(r){return r.json();})
+                .then(function(res3){
+                  var r3=(res3||[]).filter(function(r){return r.class==="amenity"||r.class==="tourism"||r.class==="leisure";});
+                  var best=r3.length?r3[0]:(res3&&res3.length?res3[0]:null);
+                  if(!best){updateQuestDist(entry.id,{notFound:true});return;}
+                  resolveNominatim(entry,hotel,[best]);
+                });
+            }
+            if(!r2.length&&res2&&res2.length){resolveNominatim(entry,hotel,res2);return;}
+            updateQuestDist(entry.id,{notFound:true});
           });
       }).catch(function(){updateQuestDist(entry.id,{error:true});});
   }
 
   function pickBestNominatim(entry,hotel,results){
-    // Prefer exact or partial name match, then closest to hotel
     var nameLow=entry.name.toLowerCase();
-    var exact=results.find(function(r){
+    // Score by name match quality
+    var scored=results.map(function(r){
       var dn=(r.display_name||"").toLowerCase();
-      return dn.indexOf(nameLow)===0||dn.indexOf(nameLow+",")>=0;
+      var score=0;
+      if(dn.indexOf(nameLow)===0)score=3;
+      else if(dn.indexOf(nameLow+",")>=0||dn.indexOf(nameLow+" ")>=0)score=2;
+      else if(dn.indexOf(nameLow)>=0)score=1;
+      return{r:r,score:score};
     });
-    var best=exact||results[0];
-    resolveNominatim(entry,hotel,[best]);
+    scored.sort(function(a,b){return b.score-a.score;});
+    resolveNominatim(entry,hotel,[scored[0].r]);
   }
 
   function resolveNominatim(entry,hotel,results){
@@ -628,11 +640,11 @@ function App(){
     if(addr.road)parts.push(addr.road);
     if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
     var shortAddr=parts.length?parts.join(", "):(best.display_name||"").split(",").slice(0,2).join(",").trim();
-    // Use display name as resolved venue name if it looks like a proper name (not just a street)
+    // Always use the display_name first segment as the venue name when it's an amenity
     var venueName=null;
-    if(best.class==="amenity"||best.class==="tourism"||best.class==="leisure"){
+    if(best.class==="amenity"||best.class==="tourism"||best.class==="leisure"||best.class==="shop"){
       var namePart=(best.display_name||"").split(",")[0].trim();
-      if(namePart.length>entry.name.length)venueName=namePart;
+      if(namePart&&namePart.toLowerCase()!==entry.name.toLowerCase())venueName=namePart;
     }
     routeFromCoords(entry,hotel,lat,lon,shortAddr,venueName);
   }
@@ -644,7 +656,7 @@ function App(){
           dist:{lat:lat,lon:lon,resolvedAddr:resolvedAddr||null},
           distLoading:false
         });
-        if(resolvedName&&resolvedName.length>q.name.length){
+        if(resolvedName){
           updated.name=resolvedName;
         }
         return updated;
