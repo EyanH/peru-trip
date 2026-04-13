@@ -566,92 +566,75 @@ function App(){
   var toggleQuestDone=function(id){setQuests(function(prev){var n=prev.map(function(q){return q.id===id?Object.assign({},q,{done:!q.done}):q});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n})};
   var updateQuestDist=function(id,dist){setQuests(function(prev){var n=prev.map(function(q){return q.id===id?Object.assign({},q,{dist:dist,distLoading:dist===null}):q});return n})};
 
-  var FSQ_KEY="Q2QWDWMBQIWHY4WES1M4P3IRRAOVJ1R015OVYSGCFRCYH1AW";
-
-  // Geocode via Foursquare Places API (accurate venue search) + OSRM routing
-  // Category IDs: 13000=Food, 10000=Arts&Entertainment, 16000=Landmarks, 12000=Outdoors
-  var FSQ_CAT_MAP={restaurant:"13000",sight:"16000,10000",food:"13000",activity:"10000,18000"};
-
+  // Geocode using Nominatim with smart venue-first search + OSRM routing
   function geocodeQuest(entry){
     var hotel=HOTEL_COORDS[entry.city]||HOTEL_COORDS.lima;
-    var ll=hotel.lat+","+hotel.lon;
-    var cats=FSQ_CAT_MAP[entry.cat]||"13000";
-    // Use categories to filter out streets/neighborhoods, get only real venues
-    var url="https://api.foursquare.com/v3/places/search"
-      +"?query="+encodeURIComponent(entry.name)
-      +"&ll="+ll
-      +"&radius=30000"
-      +"&limit=10"
-      +"&categories="+cats
-      +"&fields=name,location,geocodes,categories";
-    fetch(url,{headers:{"Authorization":FSQ_KEY,"Accept":"application/json"}})
-      .then(function(r){return r.json();})
-      .then(function(data){
-        var results=(data.results||[]).filter(function(r){
-          // Must have real geocodes
-          if(!r.geocodes||!r.geocodes.main)return false;
-          // Filter out results that are just streets/neighborhoods (no street number = probably not a venue)
-          var loc=r.location||{};
-          if(!loc.address&&!loc.formatted_address)return false;
-          return true;
-        });
-        if(!results.length){
-          // Retry without category filter — maybe it's an unusual venue type
-          var url2="https://api.foursquare.com/v3/places/search"
-            +"?query="+encodeURIComponent(entry.name)
-            +"&ll="+ll+"&radius=30000&limit=5&fields=name,location,geocodes";
-          return fetch(url2,{headers:{"Authorization":FSQ_KEY,"Accept":"application/json"}})
-            .then(function(r){return r.json();})
-            .then(function(data2){
-              var r2=(data2.results||[]).filter(function(r){return r.geocodes&&r.geocodes.main&&(r.location&&r.location.address);});
-              if(!r2.length){updateQuestDist(entry.id,{notFound:true});return;}
-              pickAndRoute(entry,hotel,r2);
-            });
-        }
-        pickAndRoute(entry,hotel,results);
-      }).catch(function(){
-        geocodeNominatim(entry,hotel);
-      });
-  }
-
-  function pickAndRoute(entry,hotel,results){
-    // Score: exact name match first, then partial match, then closest
-    var nameLow=entry.name.toLowerCase();
-    var exact=results.find(function(r){return r.name.toLowerCase()===nameLow;});
-    var partial=!exact&&results.find(function(r){return r.name.toLowerCase().indexOf(nameLow)>=0||nameLow.indexOf(r.name.toLowerCase())>=0;});
-    var best=exact||partial||results.reduce(function(a,b){
-      var ag=a.geocodes.main,bg=b.geocodes.main;
-      var da=Math.pow(ag.latitude-hotel.lat,2)+Math.pow(ag.longitude-hotel.lon,2);
-      var db=Math.pow(bg.latitude-hotel.lat,2)+Math.pow(bg.longitude-hotel.lon,2);
-      return da<=db?a:b;
-    });
-    var geo=best.geocodes.main;
-    var loc=best.location||{};
-    var addrParts=[];
-    if(loc.address)addrParts.push(loc.address);
-    if(loc.neighborhood||loc.locality)addrParts.push(loc.neighborhood||loc.locality);
-    var shortAddr=addrParts.length?addrParts.join(", "):best.name;
-    // Store the resolved venue name so we can update display
-    routeFromCoords(entry,hotel,geo.latitude,geo.longitude,shortAddr,best.name);
-  }
-
-  // Nominatim fallback
-  function geocodeNominatim(entry,hotel){
-    var cityStr=entry.city==="cusco"?"Cusco, Peru":"Lima, Peru";
-    var query=encodeURIComponent(entry.name+", "+cityStr);
-    fetch("https://nominatim.openstreetmap.org/search?q="+query+"&format=json&limit=3&addressdetails=1&countrycodes=pe")
+    var cityStr=entry.city==="cusco"?"Cusco":"Lima";
+    var countryStr="Peru";
+    // Step 1: Try structured search (name + city) with amenity bias — finds real venues
+    var structUrl="https://nominatim.openstreetmap.org/search"
+      +"?q="+encodeURIComponent(entry.name)
+      +"&format=json&limit=10&addressdetails=1&countrycodes=pe"
+      +"&viewbox="+encodeURIComponent(
+          entry.city==="cusco"?"-72.05,-13.45,-71.90,-13.60":"-77.15,-12.05,-76.95,-12.20"
+        )
+      +"&bounded=1";
+    fetch(structUrl)
       .then(function(r){return r.json();})
       .then(function(results){
-        if(!results||!results.length){updateQuestDist(entry.id,{notFound:true});return;}
-        var best=results.find(function(r){return r.type==="restaurant"||r.type==="cafe"||r.type==="bar"||r.class==="amenity"||r.class==="tourism";})||results[0];
-        var lat=parseFloat(best.lat),lon=parseFloat(best.lon);
-        var addr=best.address||{};
-        var parts=[];
-        if(addr.road)parts.push(addr.road);
-        if(addr.suburb||addr.neighbourhood)parts.push(addr.suburb||addr.neighbourhood);
-        var shortAddr=parts.length?parts.join(", "):(best.display_name||"").split(",").slice(0,2).join(",").trim();
-        routeFromCoords(entry,hotel,lat,lon,shortAddr);
+        // Filter: must be a venue (amenity/tourism/leisure class), not a street/highway
+        var venues=(results||[]).filter(function(r){
+          return r.class==="amenity"||r.class==="tourism"||r.class==="leisure"||r.class==="shop"
+            ||r.type==="restaurant"||r.type==="cafe"||r.type==="bar"||r.type==="fast_food"
+            ||r.type==="museum"||r.type==="attraction"||r.type==="hotel";
+        });
+        if(venues.length){
+          pickBestNominatim(entry,hotel,venues);
+          return;
+        }
+        // Step 2: Broader search without bounding box
+        var broadUrl="https://nominatim.openstreetmap.org/search"
+          +"?q="+encodeURIComponent(entry.name+", "+cityStr+", "+countryStr)
+          +"&format=json&limit=5&addressdetails=1&countrycodes=pe";
+        return fetch(broadUrl)
+          .then(function(r){return r.json();})
+          .then(function(res2){
+            var r2=(res2||[]).filter(function(r){
+              return r.class==="amenity"||r.class==="tourism"||r.class==="leisure"||r.class==="shop";
+            });
+            var best=r2.length?r2[0]:(res2&&res2.length?res2[0]:null);
+            if(!best){updateQuestDist(entry.id,{notFound:true});return;}
+            resolveNominatim(entry,hotel,[best]);
+          });
       }).catch(function(){updateQuestDist(entry.id,{error:true});});
+  }
+
+  function pickBestNominatim(entry,hotel,results){
+    // Prefer exact or partial name match, then closest to hotel
+    var nameLow=entry.name.toLowerCase();
+    var exact=results.find(function(r){
+      var dn=(r.display_name||"").toLowerCase();
+      return dn.indexOf(nameLow)===0||dn.indexOf(nameLow+",")>=0;
+    });
+    var best=exact||results[0];
+    resolveNominatim(entry,hotel,[best]);
+  }
+
+  function resolveNominatim(entry,hotel,results){
+    var best=results[0];
+    var lat=parseFloat(best.lat),lon=parseFloat(best.lon);
+    var addr=best.address||{};
+    var parts=[];
+    if(addr.road)parts.push(addr.road);
+    if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
+    var shortAddr=parts.length?parts.join(", "):(best.display_name||"").split(",").slice(0,2).join(",").trim();
+    // Use display name as resolved venue name if it looks like a proper name (not just a street)
+    var venueName=null;
+    if(best.class==="amenity"||best.class==="tourism"||best.class==="leisure"){
+      var namePart=(best.display_name||"").split(",")[0].trim();
+      if(namePart.length>entry.name.length)venueName=namePart;
+    }
+    routeFromCoords(entry,hotel,lat,lon,shortAddr,venueName);
   }
   function routeFromCoords(entry,hotel,lat,lon,resolvedAddr,resolvedName){
     var walkUrl="https://router.project-osrm.org/route/v1/foot/"+hotel.lon+","+hotel.lat+";"+lon+","+lat+"?overview=false";
@@ -684,36 +667,17 @@ function App(){
     if(!addrStr.trim())return;
     var hotel=HOTEL_COORDS[entry.city]||HOTEL_COORDS.lima;
     updateQuestDist(entry.id,null);
-    // Try Foursquare first with the manual address as query
-    var ll=hotel.lat+","+hotel.lon;
-    var url="https://api.foursquare.com/v3/places/search?query="+encodeURIComponent(addrStr)+"&ll="+ll+"&radius=40000&limit=1&fields=name,location,geocodes";
-    fetch(url,{headers:{"Authorization":FSQ_KEY,"Accept":"application/json"}})
+    fetch("https://nominatim.openstreetmap.org/search?q="+encodeURIComponent(addrStr+", Peru")+"&format=json&limit=1&addressdetails=1&countrycodes=pe")
       .then(function(r){return r.json();})
-      .then(function(data){
-        var results=data.results||[];
-        if(results.length&&results[0].geocodes&&results[0].geocodes.main){
-          var geo=results[0].geocodes.main;
-          var loc=results[0].location||{};
-          var parts=[];
-          if(loc.address)parts.push(loc.address);
-          if(loc.neighborhood||loc.locality)parts.push(loc.neighborhood||loc.locality);
-          var shortAddr=parts.length?parts.join(", "):results[0].name;
-          routeFromCoords(entry,hotel,geo.latitude,geo.longitude,shortAddr,results[0].name);
-          return;
-        }
-        // Fall back to Nominatim with manual string
-        fetch("https://nominatim.openstreetmap.org/search?q="+encodeURIComponent(addrStr+", Peru")+"&format=json&limit=1&countrycodes=pe")
-          .then(function(r){return r.json();})
-          .then(function(results){
-            if(!results||!results.length){updateQuestDist(entry.id,{notFound:true});return;}
-            var lat=parseFloat(results[0].lat),lon=parseFloat(results[0].lon);
-            var addr=results[0].address||{};
-            var parts=[];
-            if(addr.road)parts.push(addr.road);
-            if(addr.suburb||addr.neighbourhood)parts.push(addr.suburb||addr.neighbourhood);
-            var shortAddr=parts.length?parts.join(", "):(results[0].display_name||"").split(",").slice(0,2).join(",").trim();
-            routeFromCoords(entry,hotel,lat,lon,shortAddr);
-          }).catch(function(){updateQuestDist(entry.id,{error:true});});
+      .then(function(results){
+        if(!results||!results.length){updateQuestDist(entry.id,{notFound:true});return;}
+        var lat=parseFloat(results[0].lat),lon=parseFloat(results[0].lon);
+        var addr=results[0].address||{};
+        var parts=[];
+        if(addr.road)parts.push(addr.road);
+        if(addr.suburb||addr.neighbourhood||addr.city_district)parts.push(addr.suburb||addr.neighbourhood||addr.city_district);
+        var shortAddr=parts.length?parts.join(", "):(results[0].display_name||"").split(",").slice(0,2).join(",").trim();
+        routeFromCoords(entry,hotel,lat,lon,shortAddr);
       }).catch(function(){updateQuestDist(entry.id,{error:true});});
   }
 
