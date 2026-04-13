@@ -637,30 +637,19 @@ function App(){
     routeFromCoords(entry,hotel,lat,lon,shortAddr,venueName);
   }
   function routeFromCoords(entry,hotel,lat,lon,resolvedAddr,resolvedName){
-    var walkUrl="https://router.project-osrm.org/route/v1/foot/"+hotel.lon+","+hotel.lat+";"+lon+","+lat+"?overview=false";
-    var driveUrl="https://router.project-osrm.org/route/v1/driving/"+hotel.lon+","+hotel.lat+";"+lon+","+lat+"?overview=false";
-    Promise.all([fetch(walkUrl).then(function(r){return r.json();}),fetch(driveUrl).then(function(r){return r.json();})])
-      .then(function(data){
-        var walkSec=data[0].routes&&data[0].routes[0]?data[0].routes[0].duration:null;
-        var driveSec=data[1].routes&&data[1].routes[0]?data[1].routes[0].duration:null;
-        var walkMin=walkSec?Math.round(walkSec/60):null;
-        var driveMin=driveSec?Math.round(driveSec/60):null;
-        // Update dist AND upgrade the display name to the resolved venue name if we got one
-        setQuests(function(prev){
-          return prev.map(function(q){
-            if(q.id!==entry.id)return q;
-            var updated=Object.assign({},q,{
-              dist:{walkMin:walkMin,driveMin:driveMin,lat:lat,lon:lon,resolvedAddr:resolvedAddr||null},
-              distLoading:false
-            });
-            // Only update name if resolved name is longer/more specific than what user typed
-            if(resolvedName&&resolvedName.length>q.name.length){
-              updated.name=resolvedName;
-            }
-            return updated;
-          });
+    setQuests(function(prev){
+      return prev.map(function(q){
+        if(q.id!==entry.id)return q;
+        var updated=Object.assign({},q,{
+          dist:{lat:lat,lon:lon,resolvedAddr:resolvedAddr||null},
+          distLoading:false
         });
-      }).catch(function(){updateQuestDist(entry.id,{error:true});});
+        if(resolvedName&&resolvedName.length>q.name.length){
+          updated.name=resolvedName;
+        }
+        return updated;
+      });
+    });
   }
 
   function geocodeManual(entry,addrStr){
@@ -1079,14 +1068,15 @@ h(SyncBadge,{status:syncStatus})
                       ):
                       q.dist.error?
                       h("span",{style:{fontSize:11,color:"#484f58"}},"Distance unavailable"):
-                      h("span",{style:{fontSize:11,color:"#4ecdc4",display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}},
-                        h("span",null,"\uD83D\uDEB6 "+(q.dist.walkMin!=null?q.dist.walkMin+"min walk":"\u2014")),
-                        h("span",{style:{color:"#21262d"}},"\u00B7"),
-                        h("span",null,"\uD83D\uDE97 "+(q.dist.driveMin!=null?q.dist.driveMin+"min drive":"\u2014")),
-                        q.dist.lat?h("a",{href:"https://www.google.com/maps/dir/?api=1&origin="+hotel.lat+","+hotel.lon+"&destination="+q.dist.lat+","+q.dist.lon,target:"_blank",style:{fontSize:11,color:"#4ecdc4",textDecoration:"none",marginLeft:4}},"\uD83D\uDDFA\uFE0F Maps"):null,
-                        h("button",{onClick:function(){setManualAddrMap(function(m){var n=Object.assign({},m);n[q.id]="";return n;})},style:{fontSize:10,background:"transparent",border:"none",color:"#484f58",cursor:"pointer",padding:0,marginLeft:2,textDecoration:"underline",opacity:.7}},"wrong place?")
+                      h("span",{style:{fontSize:11,color:"#4ecdc4",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
+                        q.dist.lat?h("a",{
+                          href:"https://www.google.com/maps/dir/?api=1&destination="+q.dist.lat+","+q.dist.lon,
+                          target:"_blank",
+                          style:{fontSize:12,color:"#4ecdc4",textDecoration:"none",background:"rgba(78,205,196,0.12)",border:"1px solid rgba(78,205,196,0.3)",borderRadius:8,padding:"4px 10px",fontWeight:600}
+                        },"\uD83D\uDDFA\uFE0F Get Directions"):null,
+                        h("button",{onClick:function(){setManualAddrMap(function(m){var n=Object.assign({},m);n[q.id]="";return n;})},style:{fontSize:10,background:"transparent",border:"none",color:"#484f58",cursor:"pointer",padding:0,textDecoration:"underline",opacity:.7}},"wrong place?")
                       )
-                    ):h("span",{style:{fontSize:11,color:"#484f58",fontStyle:"italic"}},"Getting distance\u2026")
+                    ):h("span",{style:{fontSize:11,color:"#484f58",fontStyle:"italic"}},"Finding location\u2026")
                   )
                 ),
                 // Actions
