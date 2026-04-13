@@ -555,7 +555,7 @@ function App(){
   // Quest mutations
   var addQuest=function(q){
     var city=q.city==="auto"?detectQuestCity(q.name,q.notes):q.city;
-    var entry={id:"q"+Date.now(),name:q.name,cat:q.cat,notes:q.notes,city:city,done:false,dist:null,distLoading:false,createdAt:Date.now()};
+    var entry={id:"q"+Date.now(),name:q.name,cat:q.cat,notes:q.notes,city:city,done:false,dist:null,distLoading:false,mapsUrl:q.mapsUrl||"",createdAt:Date.now()};
     // If a Maps URL was provided, extract coords directly — skip Nominatim
     var coordsFromUrl=parseMapsUrl(q.mapsUrl||"");
     if(coordsFromUrl){
@@ -1154,7 +1154,8 @@ h(SyncBadge,{status:syncStatus})
                               var coords=parseMapsUrl(manualAddrMap[q.id]);
                               if(coords){
                                 var newDist={lat:coords.lat,lon:coords.lon,resolvedAddr:null};
-                                setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:newDist,distLoading:false}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
+                                var savedUrl=manualAddrMap[q.id];
+                                setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:newDist,distLoading:false,mapsUrl:savedUrl}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
                                 setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});
                                 fetch("https://nominatim.openstreetmap.org/reverse?lat="+coords.lat+"&lon="+coords.lon+"&format=json&addressdetails=1")
                                   .then(function(r){return r.json();})
@@ -1182,7 +1183,8 @@ h(SyncBadge,{status:syncStatus})
                               var coords=parseMapsUrl(manualAddrMap[q.id]);
                               if(coords){
                                 var newDist={lat:coords.lat,lon:coords.lon,resolvedAddr:null};
-                                setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:newDist,distLoading:false}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
+                                var savedUrl=manualAddrMap[q.id];
+                                setQuests(function(prev){var n=prev.map(function(x){return x.id===q.id?Object.assign({},x,{dist:newDist,distLoading:false,mapsUrl:savedUrl}):x});scheduleSync(undefined,undefined,undefined,undefined,undefined,undefined,n);return n;});
                                 setManualAddrMap(function(m){var n=Object.assign({},m);delete n[q.id];return n});
                                 // Reverse geocode for address
                                 fetch("https://nominatim.openstreetmap.org/reverse?lat="+coords.lat+"&lon="+coords.lon+"&format=json&addressdetails=1")
@@ -1227,7 +1229,7 @@ h(SyncBadge,{status:syncStatus})
                       h("span",{style:{fontSize:11,color:"#484f58"}},"Distance unavailable"):
                       h("span",{style:{fontSize:11,color:"#4ecdc4",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}},
                         q.dist.lat?h("a",{
-                          href:"https://www.google.com/maps?q="+q.dist.lat+","+q.dist.lon,
+                          href:q.mapsUrl||("https://www.google.com/maps?q="+q.dist.lat+","+q.dist.lon),
                           target:"_blank",
                           style:{fontSize:12,color:"#4ecdc4",textDecoration:"none",background:"rgba(78,205,196,0.12)",border:"1px solid rgba(78,205,196,0.3)",borderRadius:8,padding:"4px 10px",fontWeight:600}
                         },"\uD83D\uDDFA\uFE0F View on Maps"):null,
